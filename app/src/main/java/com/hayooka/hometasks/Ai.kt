@@ -46,7 +46,7 @@ object Ai {
                     val dn = byKey[d.toString() + "_" + t.id]
                     if (dn != null && dn.ok && (dn.at < 0 || dn.at <= limit)) onTime++
                     else if (dn != null) late++
-                    else if (d.isBefore(today) || nowMin > limit) { missed++; missedTitles[t.title] = (missedTitles[t.title] ?: 0) + 1 }
+                    else if (m.accountable(d.toString(), limit) && (d.isBefore(today) || nowMin > limit)) { missed++; missedTitles[t.title] = (missedTitles[t.title] ?: 0) + 1 }
                 }
                 d = d.plusDays(1)
             }

@@ -11,7 +11,12 @@ data class Member(
     val streak: Int = 0, val streakDate: String = "",
     /** اللي يتمناه إذا طلع الأول بالشهر. */
     val wish: String = "",
-)
+    /** أول دخول له بعد آخر تصفير: التاريخ والدقيقة من اليوم. فاضي = لسا ما دخل، وما ينحاسب على شي. */
+    val joinDate: String = "", val joinMin: Int = 0,
+) {
+    /** هل ينحاسب على مهمة بهذا التاريخ موعدها النهائي limit؟ بس على اللي بعد أول دخول له. */
+    fun accountable(date: String, limit: Int) = joinDate.isNotEmpty() && (date > joinDate || (date == joinDate && limit > joinMin))
+}
 
 /** day: 0 = الأحد … 6 = السبت. start بالدقايق من أول اليوم، وآخر موعد للمهمة = start + dur. */
 data class Task(

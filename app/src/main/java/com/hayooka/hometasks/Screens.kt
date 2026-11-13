@@ -95,6 +95,10 @@ fun Home(repo: Repo, code: String, meId: String, onLogout: () -> Unit) {
             try { askNotif.launch(android.Manifest.permission.POST_NOTIFICATIONS) } catch (e: Exception) { }
         }
     }
+    // حساب كل واحد يبدأ من أول مرة يفتح فيها التطبيق (بعد آخر تصفير)
+    LaunchedEffect(me.joinDate) {
+        if (me.joinDate.isEmpty()) try { repo.markJoined(code, me.id, date, nowMin) } catch (e: Exception) { }
+    }
     // نحفظ قائمة مهام اليوم كدليل على اللي كان مطلوب
     val todays = tasks.filter { it.day == Rules.dayIndex(today) }
     LaunchedEffect(date, todays) {
@@ -721,6 +725,19 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                     "إخوانك يحتاجونها عشان يسجلون خروج أو يلغون حماية الحذف من داخل التطبيق. لا تعطينها لهم إلا لما تبغين.",
                     fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+
+                HorizontalDivider()
+                var confirmWipe by remember { mutableStateOf(false) }
+                OutlinedButton(onClick = { confirmWipe = true }, modifier = Modifier.fillMaxWidth()) { Text("تصفير النقاط والسجل (بداية جديدة)") }
+                if (confirmWipe) {
+                    AlertDialog(
+                        onDismissRequest = { confirmWipe = false },
+                        title = { Text("بداية جديدة؟") },
+                        text = { Text("تنمسح كل التأشيرات والسجل، وترجع نقاط ومستويات وسلاسل الكل للصفر. المهام والأعضاء والشخصيات يبقون. وحساب كل واحد يبدأ من أول مرة يفتح فيها التطبيق بعدها. ما في تراجع.") },
+                        confirmButton = { TextButton(onClick = { confirmWipe = false; act { repo.resetProgress(code); ctx.toast("تصفّر كل شي") } }) { Text("تصفير", color = MaterialTheme.colorScheme.error) } },
+                        dismissButton = { TextButton(onClick = { confirmWipe = false }) { Text("إلغاء") } },
+                    )
+                }
 
                 HorizontalDivider()
                 var confirmReset by remember { mutableStateOf(false) }

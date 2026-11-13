@@ -50,7 +50,7 @@ object Penalty {
             .map { it to (it.start + it.dur + house.grace) }
             .filter { (t, deadline) ->
                 val dn = mineDone[t.id]
-                deadline > floor && nowMin > deadline && (dn == null || dn.at > deadline)
+                deadline > floor && m.accountable(d, deadline) && nowMin > deadline && (dn == null || dn.at > deadline)
             }
             .sortedBy { it.second }
         // تبقى "فايتة" لحد ما تنعمل والقائد يوافق عليها

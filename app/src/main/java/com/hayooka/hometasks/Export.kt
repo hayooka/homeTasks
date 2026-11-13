@@ -35,6 +35,9 @@ object Export {
                     val d = byKey[date + "_" + t.id]
                     if (d != null) used += t.id
                     val limit = t.start + t.dur + grace
+                    // قبل أول دخول للعضو ما ينحسب عليه شي، إلا إذا أشّر فعلاً
+                    val owner = members.firstOrNull { it.id == t.memberId }
+                    if (d == null && (owner == null || !owner.accountable(date, limit))) continue
                     val result = when {
                         d != null && !d.ok -> "تنتظر موافقة القائد"
                         d != null && !t.allDay && d.at > limit -> "متأخرة"

@@ -121,6 +121,7 @@ class Repo {
             it.getBoolean("leader") ?: false, it.getDouble("total") ?: 0.0,
             it.getLong("guardAt") ?: 0L, it.getBoolean("guardOk") ?: false,
             (it.getLong("streak") ?: 0L).toInt(), it.getString("streakDate") ?: "", it.getString("wish") ?: "",
+            it.getString("joinDate") ?: "", (it.getLong("joinMin") ?: 0L).toInt(),
         )
     }
 
@@ -287,6 +288,27 @@ class Repo {
     /** نبضة من خدمة الحراسة على جوال العضو: آخر وقت كانت شغالة وهل صلاحياتها كاملة. */
     suspend fun beat(code: String, memberId: String, ok: Boolean) {
         members(code).document(memberId).update(mapOf("guardAt" to System.currentTimeMillis(), "guardOk" to ok)).await()
+    }
+
+    /** يسجل لحظة أول دخول للعضو، ومنها يبدأ حسابه. */
+    suspend fun markJoined(code: String, memberId: String, date: String, nowMin: Int) {
+        members(code).document(memberId).update(mapOf("joinDate" to date, "joinMin" to nowMin)).await()
+    }
+
+    /** تصفير كامل: يمسح كل التأشيرات وقوائم الأيام، ويرجّع نقاط وسلاسل الكل للصفر. المهام والأعضاء يبقون. */
+    suspend fun resetProgress(code: String) {
+        val refs = done(code).get().await().documents.map { it.reference } +
+            house(code).collection("days").get().await().documents.map { it.reference }
+        for (chunk in refs.chunked(400)) {
+            val b = db.batch()
+            for (r in chunk) b.delete(r)
+            b.commit().await()
+        }
+        val b = db.batch()
+        for (m in members(code).get().await().documents) {
+            b.update(m.reference, mapOf("total" to 0.0, "streak" to 0, "streakDate" to "", "joinDate" to "", "joinMin" to 0))
+        }
+        b.commit().await()
     }
 
     suspend fun setWish(code: String, memberId: String, wish: String) {
