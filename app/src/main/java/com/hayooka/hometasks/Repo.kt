@@ -146,6 +146,10 @@ class Repo {
         b.commit().await()
     }
 
+    suspend fun setStartDate(code: String, date: String) {
+        house(code).update("startDate", date).await()
+    }
+
     suspend fun saveAi(code: String, key: String, model: String) {
         house(code).update(mapOf("aiKey" to key, "aiModel" to model)).await()
     }

@@ -3,17 +3,20 @@
 package com.hayooka.hometasks
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -97,15 +100,26 @@ fun TodayPage(me: Member, house: House, tasks: List<Task>, done: List<Done>, tod
     val penalty = if (counted) Rules.penalty(house, me.age, yTasks.count { it.id !in yDone }, yTasks.size) else null
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            CharacterView(me.character, Rules.level(me.total), Modifier.size(72.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("أهلاً ${me.name}", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                Text("المستوى ${Rules.level(me.total)} · ${me.total} نقطة", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                LinearProgressIndicator(progress = { Rules.levelProgress(me.total) }, modifier = Modifier.fillMaxWidth())
+        // الشخصية هي أول وأكبر شي بالصفحة
+        val kind = ((me.character % 6) + 6) % 6
+        val level = Rules.level(me.total)
+        val left = Rules.LEVEL_SIZE - (me.total % Rules.LEVEL_SIZE)
+        val allDone = mine.isNotEmpty() && mine.all { doneToday[it.id] != null }
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Box(contentAlignment = Alignment.Center) {
+                Box(Modifier.size(230.dp).clip(CircleShape).background(CHARACTER_COLORS[kind].copy(alpha = 0.16f)))
+                CharacterView(me.character, level, Modifier.size(200.dp))
             }
+            Text("${me.name} · ${CHARACTER_NAMES[kind]}", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text("المستوى $level · ${me.total} نقطة", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            LinearProgressIndicator(progress = { Rules.levelProgress(me.total) }, modifier = Modifier.width(230.dp))
+            Text("باقي $left نقطة للمستوى الجاي", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Text("${DAY_NAMES[Rules.dayIndex(today)]} · نقاط اليوم $earned من $possible", fontWeight = FontWeight.Medium)
+        Text(
+            if (allDone) "${DAY_NAMES[Rules.dayIndex(today)]} · خلصت كل مهامك! $earned نقطة"
+            else "${DAY_NAMES[Rules.dayIndex(today)]} · نقاط اليوم $earned من $possible",
+            fontWeight = FontWeight.Medium,
+        )
 
         if (penalty != null) {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer), modifier = Modifier.fillMaxWidth()) {
@@ -298,6 +312,16 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                     }
                 }
                 Button(onClick = { act { repo.saveSettings(code, grace, pen); ctx.toast("انحفظ") } }, modifier = Modifier.fillMaxWidth()) { Text("حفظ الإعدادات") }
+                HorizontalDivider()
+                Text("تجربة العقوبات", fontWeight = FontWeight.Bold)
+                Text(
+                    "العقوبة تنحسب من مهام أمس، والبيت الجديد ما يحسب الأيام اللي قبل إنشائه. للتجربة: خلّي أمس يوم محسوب، فتطلع عقوبة اليوم لكل واحد كأنه ما عمل مهام أمس.",
+                    fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { act { repo.setStartDate(code, today.minusDays(1).toString()); ctx.toast("أمس صار محسوب") } }) { Text("احسبي أمس") }
+                    OutlinedButton(onClick = { act { repo.setStartDate(code, today.toString()); ctx.toast("رجع الحساب من اليوم") } }) { Text("ابدئي من اليوم") }
+                }
                 HorizontalDivider()
                 var confirmReset by remember { mutableStateOf(false) }
                 OutlinedButton(onClick = { confirmReset = true }, modifier = Modifier.fillMaxWidth()) { Text("إرجاع الجدول الأصلي") }
