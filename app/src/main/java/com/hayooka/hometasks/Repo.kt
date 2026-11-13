@@ -149,6 +149,36 @@ class Repo {
         )
     }
 
+    /**
+     * يحفظ قائمة مهام اليوم كما هي، عشان يبقى دليل على اللي كان مطلوب حتى لو تغيّر الجدول بعدين.
+     * overwrite: القائد يحدّثها لما يعدل مهام اليوم، والباقي يكتبونها بس إذا مو موجودة.
+     */
+    suspend fun snapshotDay(code: String, date: String, todays: List<Task>, overwrite: Boolean) {
+        val ref = house(code).collection("days").document(date)
+        if (!overwrite && ref.get().await().exists()) return
+        ref.set(
+            mapOf(
+                "tasks" to todays.map {
+                    mapOf("id" to it.id, "title" to it.title, "memberId" to it.memberId, "start" to it.start, "dur" to it.dur, "points" to it.points, "personal" to it.personal)
+                },
+            ),
+        ).await()
+    }
+
+    /** قوائم المهام المحفوظة لكل يوم: التاريخ ← المهام. */
+    suspend fun allDays(code: String): Map<String, List<Task>> =
+        house(code).collection("days").get().await().documents.associate { doc ->
+            val day = try { Rules.dayIndex(LocalDate.parse(doc.id)) } catch (e: Exception) { 0 }
+            doc.id to ((doc.get("tasks") as? List<*>) ?: emptyList<Any>()).mapNotNull { raw ->
+                val m = raw as? Map<*, *> ?: return@mapNotNull null
+                Task(
+                    m["id"] as? String ?: "", m["title"] as? String ?: "", m["memberId"] as? String ?: "", day,
+                    (m["start"] as? Number)?.toInt() ?: 0, (m["dur"] as? Number)?.toInt() ?: 0, (m["points"] as? Number)?.toInt() ?: 0,
+                    m["personal"] as? Boolean ?: false,
+                )
+            }
+        }
+
     // ---------- كتابة ----------
 
     /** ok = false للمهمة المتأخرة: تنسجل بس نقاطها ما تنضاف لحد ما القائد يوافق. */

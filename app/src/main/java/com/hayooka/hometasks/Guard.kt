@@ -121,6 +121,7 @@ class EnforcerService : Service() {
     private var doneJob: Job? = null
     private var doneDate = ""
     private var lastBeat = 0L
+    private var snapDate = ""
     /** المهام اللي انرسل تذكيرها اليوم، عشان ما يتكرر. */
     private val reminded = HashSet<String>()
 
@@ -178,6 +179,12 @@ class EnforcerService : Service() {
         val m = me
         val t = tasks
         val d = done
+        // لو ما حد فتح التطبيق اليوم، الخدمة تحفظ قائمة مهام اليوم كدليل
+        if (t != null && snapDate != doneDate) {
+            snapDate = doneDate
+            val todays = t.filter { it.day == Rules.dayIndex(date) }
+            if (todays.isNotEmpty()) scope.launch { try { repo.snapshotDay(code, doneDate, todays, false) } catch (e: Exception) { } }
+        }
         // ما ننفذ شي قبل ما توصل كل البيانات، عشان ما ينقفل الجوال بالغلط
         val st = if (h != null && m != null && t != null && d != null && Penalty.enforcedOnPhone(m)) {
             Penalty.forMember(h, m, t, d, date, now.hour * 60 + now.minute)

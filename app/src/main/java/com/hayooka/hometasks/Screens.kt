@@ -95,6 +95,11 @@ fun Home(repo: Repo, code: String, meId: String, onLogout: () -> Unit) {
             try { askNotif.launch(android.Manifest.permission.POST_NOTIFICATIONS) } catch (e: Exception) { }
         }
     }
+    // نحفظ قائمة مهام اليوم كدليل على اللي كان مطلوب
+    val todays = tasks.filter { it.day == Rules.dayIndex(today) }
+    LaunchedEffect(date, todays) {
+        if (todays.isNotEmpty()) try { repo.snapshotDay(code, date, todays, me.leader) } catch (e: Exception) { }
+    }
     LaunchedEffect(house.seedVersion, me.leader) {
         if (me.leader && house.seedVersion < SEED_VERSION) try { repo.migrateSeed(code, house.seedVersion) } catch (e: Exception) { }
     }
@@ -688,13 +693,15 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                     androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/json"),
                 ) { uri -> write(uri) }
                 Text("تنزيل السجل", fontWeight = FontWeight.Bold)
-                Text("كل اللي تأشّر من أول يوم: التاريخ، العضو، المهمة، وقت التأشير، النقاط، والحالة.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("سطر لكل مهمة كانت على كل واحد بكل يوم، ونتيجتها: بوقتها، متأخرة، أو ما انعملت.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = {
-                        act { exportText = Export.csv(repo.allDone(code), members, tasks); saveCsv.launch("homeTasks-log-$today.csv") }
+                        val c = java.time.LocalTime.now()
+                        act { exportText = Export.csv(repo.allDays(code), repo.allDone(code), members, today, c.hour * 60 + c.minute, house.grace); saveCsv.launch("homeTasks-log-$today.csv") }
                     }) { Text("ملف Excel (CSV)") }
                     OutlinedButton(onClick = {
-                        act { exportText = Export.json(repo.allDone(code), members, tasks); saveJson.launch("homeTasks-log-$today.json") }
+                        val c = java.time.LocalTime.now()
+                        act { exportText = Export.json(repo.allDays(code), repo.allDone(code), members, today, c.hour * 60 + c.minute, house.grace); saveJson.launch("homeTasks-log-$today.json") }
                     }) { Text("ملف JSON") }
                 }
 
