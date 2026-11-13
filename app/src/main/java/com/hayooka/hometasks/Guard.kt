@@ -45,15 +45,16 @@ object Penalty {
         if (house.enforceDate.isEmpty() || d < house.enforceDate) return PenaltyState.NONE
         // يوم التفعيل: ما نحاسب على مواعيد عدّت قبل لحظة التفعيل
         val floor = if (d == house.enforceDate) house.enforceMin else -1
-        val doneAt = done.filter { it.date == d && it.memberId == m.id }.associate { it.taskId to it.at }
+        val mineDone = done.filter { it.date == d && it.memberId == m.id }.associateBy { it.taskId }
         val missed = tasks.filter { it.memberId == m.id && it.day == Rules.dayIndex(date) }
             .map { it to (it.start + it.dur + house.grace) }
             .filter { (t, deadline) ->
-                val at = doneAt[t.id]
-                deadline > floor && nowMin > deadline && (at == null || at > deadline)
+                val dn = mineDone[t.id]
+                deadline > floor && nowMin > deadline && (dn == null || dn.at > deadline)
             }
             .sortedBy { it.second }
-        val overdue = missed.filter { doneAt[it.first.id] == null }.map { it.first }
+        // تبقى "فايتة" لحد ما تنعمل والليدر توافق عليها
+        val overdue = missed.filter { mineDone[it.first.id]?.ok != true }.map { it.first }
         var until = 0
         missed.take(3).forEachIndexed { i, (_, deadline) ->
             val end = minOf(deadline + (i + 1) * 60, 24 * 60)
@@ -66,7 +67,12 @@ object Penalty {
     fun enforcedOnPhone(m: Member) = !m.leader && m.age != "u10"
 
     fun describe(st: PenaltyState, m: Member): String = when {
-        m.age == "u10" -> "التلفزيون بدون إنترنت اليوم."
+        m.age == "u10" -> when {
+            st.missed >= 4 -> "ما في يوتيوب اليوم."
+            st.missed == 3 -> "راحت عليك 3 ساعات يوتيوب."
+            st.missed == 2 -> "راحت عليك ساعتين يوتيوب."
+            else -> "راحت عليك ساعة يوتيوب."
+        }
         st.lock -> "الجوال مقفول لحد ما تخلص كل المهام الفايتة."
         st.block -> "الإنترنت مقطوع عن الجوال لحد ${Rules.fmt(st.blockUntil)}."
         else -> "خلصت مدة القطع. أي مهمة فايتة ثانية تزيد العقوبة."
@@ -77,6 +83,8 @@ object Penalty {
 object Guard {
     val lock = mutableStateOf(false)
     val overdue = mutableStateOf<List<Task>>(emptyList())
+    /** مهام فايتة أشّر عليها العضو وتنتظر موافقة الليدر. */
+    val pending = mutableStateOf<Set<String>>(emptySet())
     val member = mutableStateOf<Member?>(null)
     @Volatile var code: String? = null
     @Volatile var grace: Int = 30
@@ -168,6 +176,7 @@ class EnforcerService : Service() {
         Guard.member.value = m
         Guard.grace = h?.grace ?: 30
         Guard.overdue.value = st.overdue
+        Guard.pending.value = if (d != null && m != null) d.filter { !it.ok && it.memberId == m.id && it.date == doneDate }.map { it.taskId }.toSet() else emptySet()
         Guard.lock.value = st.lock
         if (st.lock && !LockActivity.visible && System.currentTimeMillis() > Guard.passUntil && !inCall() && Guard.overlayReady(this)) {
             startActivity(Intent(this, LockActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))

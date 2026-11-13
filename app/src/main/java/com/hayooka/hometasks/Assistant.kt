@@ -22,7 +22,9 @@ fun AssistantTab(repo: Repo, code: String, house: House, members: List<Member>) 
     val scope = rememberCoroutineScope()
     var setup by remember { mutableStateOf(false) }
 
-    if (house.aiKey.isBlank() || setup) {
+    // المفتاح: من بيانات البيت، وإذا فاضي من المفتاح المبني مع التطبيق (local.properties)
+    val aiKey = house.aiKey.ifBlank { BuildConfig.GEMINI_KEY }
+    if (aiKey.isBlank() || setup) {
         var key by remember { mutableStateOf(house.aiKey) }
         var model by remember { mutableStateOf(house.aiModel.ifBlank { DEFAULT_AI_MODEL }) }
         Column(
@@ -46,7 +48,7 @@ fun AssistantTab(repo: Repo, code: String, house: House, members: List<Member>) 
                     }
                 },
             ) { Text("حفظ") }
-            if (house.aiKey.isNotBlank()) TextButton(onClick = { setup = false }) { Text("رجوع") }
+            if (aiKey.isNotBlank()) TextButton(onClick = { setup = false }) { Text("رجوع") }
         }
         return
     }
@@ -69,7 +71,7 @@ fun AssistantTab(repo: Repo, code: String, house: House, members: List<Member>) 
         busy = true
         scope.launch {
             try {
-                val r = Ai.ask(house.aiKey, house.aiModel.ifBlank { DEFAULT_AI_MODEL }, members, turns.toList())
+                val r = Ai.ask(aiKey, house.aiModel.ifBlank { DEFAULT_AI_MODEL }, members, turns.toList())
                 turns += AiTurn("model", r.raw)
                 bubbles += Bubble(false, r.reply)
                 proposals = r.tasks

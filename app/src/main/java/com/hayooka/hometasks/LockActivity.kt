@@ -44,6 +44,7 @@ private fun LockScreen(onClose: () -> Unit) {
     val repo = remember { Repo() }
     val locked by Guard.lock
     val overdue by Guard.overdue
+    val pending by Guard.pending
     val member by Guard.member
     var now by remember { mutableStateOf(LocalDateTime.now()) }
     LaunchedEffect(Unit) { while (true) { delay(1000); now = LocalDateTime.now() } }
@@ -62,7 +63,7 @@ private fun LockScreen(onClose: () -> Unit) {
             ) {
                 if (m != null && m.character >= 0) CharacterView(m.character, Rules.level(m.total), Modifier.size(180.dp))
                 Text("الجوال في إجازة يا ${m?.name ?: ""}", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White, textAlign = TextAlign.Center)
-                Text("يرجع لك أول ما تخلص المهام الفايتة.", color = Color(0xFFB8C4D0), textAlign = TextAlign.Center)
+                Text("يرجع لك أول ما تخلص المهام الفايتة والليدر توافق عليها.", color = Color(0xFFB8C4D0), textAlign = TextAlign.Center)
                 Text(clock, fontSize = 44.sp, fontWeight = FontWeight.Bold, color = Color(0xFF5CC4BF))
                 Text("وإذا ما خلصتها، يفتح لحاله آخر اليوم.", fontSize = 12.sp, color = Color(0xFFB8C4D0))
 
@@ -73,12 +74,15 @@ private fun LockScreen(onClose: () -> Unit) {
                                 Text(t.title, fontWeight = FontWeight.Medium, color = Color.White)
                                 Text("كان آخر موعد ${Rules.fmt(t.start + t.dur)}", fontSize = 12.sp, color = Color(0xFFB8C4D0))
                             }
-                            Button(onClick = {
+                            if (t.id in pending) {
+                                Text("بانتظار موافقة الليدر", fontSize = 12.sp, color = Color(0xFF5CC4BF))
+                            } else Button(onClick = {
                                 val code = Guard.code ?: return@Button
                                 val nowMin = now.hour * 60 + now.minute
                                 scope.launch {
-                                    try { repo.complete(code, t, now.toLocalDate().toString(), Rules.pointsNow(t, nowMin, Guard.grace), nowMin) }
-                                    catch (e: Exception) { ctx.toast("ما انحفظ، جرب مرة ثانية") }
+                                    try {
+                                        repo.complete(code, t, now.toLocalDate().toString(), Rules.pointsNow(t, nowMin, Guard.grace).toDouble(), nowMin, false)
+                                    } catch (e: Exception) { ctx.toast("ما انحفظ، جرب مرة ثانية") }
                                 }
                             }) { Text("خلصتها") }
                         }

@@ -6,8 +6,9 @@ import kotlin.math.roundToInt
 
 data class Member(
     val id: String, val name: String, val age: String, val character: Int,
-    val pinHash: String, val leader: Boolean, val total: Long,
+    val pinHash: String, val leader: Boolean, val total: Double,
     val guardAt: Long = 0, val guardOk: Boolean = false,
+    val streak: Int = 0, val streakDate: String = "",
 )
 
 /** day: 0 = الأحد … 6 = السبت. start بالدقايق من أول اليوم، وآخر موعد للمهمة = start + dur. */
@@ -17,12 +18,14 @@ data class Task(
 )
 
 /** at: الدقيقة من اليوم اللي تأشّرت فيها المهمة، و-1 إذا مو معروفة. */
-data class Done(val taskId: String, val memberId: String, val date: String, val points: Int, val at: Int)
+/** ok: محسوبة. المهمة المتأخرة تبقى ok = false لحد ما الليدر توافق عليها. taskId = "streak" لمكافأة السلسلة. */
+data class Done(val taskId: String, val memberId: String, val date: String, val points: Double, val at: Int, val ok: Boolean)
 
 data class House(
     val name: String, val grace: Int, val startDate: String, val penalties: Map<String, String>,
     val aiKey: String, val aiModel: String,
     val enforce: Boolean, val enforceDate: String, val enforceMin: Int,
+    val seedVersion: Int,
 )
 
 val DAY_NAMES = listOf("الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت")
@@ -39,7 +42,7 @@ val DEFAULT_PENALTIES = mapOf(
 )
 
 object Rules {
-    const val LEVEL_SIZE = 200L
+    const val LEVEL_SIZE = 200.0
 
     fun dayIndex(d: LocalDate): Int = d.dayOfWeek.value % 7
     fun weekStart(d: LocalDate): LocalDate = d.minusDays(dayIndex(d).toLong())
@@ -55,8 +58,21 @@ object Rules {
 
     fun isLate(t: Task, nowMin: Int, grace: Int) = nowMin > t.start + t.dur + grace
 
-    fun level(total: Long): Int = (total / LEVEL_SIZE).toInt() + 1
-    fun levelProgress(total: Long): Float = (total % LEVEL_SIZE) / LEVEL_SIZE.toFloat()
+    fun level(total: Double): Int = (total / LEVEL_SIZE).toInt() + 1
+    fun levelProgress(total: Double): Float = ((total % LEVEL_SIZE) / LEVEL_SIZE).toFloat()
+
+    /** عرض النقاط: بدون كسور إلا إذا فيها نص نقطة. */
+    fun pts(x: Double): String = if (x % 1.0 == 0.0) x.toLong().toString() else String.format(java.util.Locale.US, "%.1f", x)
+
+    /** السلسلة الحالية: تنحسب بس إذا آخر يوم كامل كان اليوم أو أمس، وغير هيك ترجع صفر. */
+    fun streakNow(m: Member, today: LocalDate): Int =
+        if (m.streakDate == today.toString() || m.streakDate == today.minusDays(1).toString()) m.streak else 0
+
+    /** هل كل مهام اليوم انعملت بوقتها؟ justDone هي المهمة اللي تأشّرت للتو. */
+    fun allOnTime(mine: List<Task>, doneToday: List<Done>, justDone: String, grace: Int): Boolean =
+        mine.isNotEmpty() && mine.all { t ->
+            t.id == justDone || doneToday.any { d -> d.taskId == t.id && d.ok && (d.at < 0 || d.at <= t.start + t.dur + grace) }
+        }
 
     /** عقوبة اليوم مبنية على مهام أمس: خفيفة إذا فاته شي، وثقيلة إذا فاته أكثر من النص. */
     fun penalty(house: House, age: String, missed: Int, total: Int): String? {
@@ -76,11 +92,11 @@ object Rules {
 /** جدول العائلة الأولي: نفس التوزيع اللي اتفقنا عليه، وكله يتعدل من صفحة الإدارة. */
 object Seed {
     val members = listOf(
-        Member("F", "فرح", "adult", -1, "", true, 0),
-        Member("B", "بدر", "adult", -1, "", false, 0),
-        Member("I", "إسراء", "adult", -1, "", false, 0),
-        Member("H", "حمزة", "u16", -1, "", false, 0),
-        Member("O", "عمرو", "u10", -1, "", false, 0),
+        Member("F", "فرح", "adult", -1, "", true, 0.0),
+        Member("B", "بدر", "adult", -1, "", false, 0.0),
+        Member("I", "إسراء", "adult", -1, "", false, 0.0),
+        Member("H", "حمزة", "u16", -1, "", false, 0.0),
+        Member("O", "عمرو", "u10", -1, "", false, 0.0),
     )
     private val names = members.associate { it.id to it.name }
 
@@ -95,6 +111,8 @@ object Seed {
     val SPECIAL_DAYS = setOf(4, 5)
 
     fun pointsFor(t: String): Int = when {
+        t.startsWith("صلاة") -> 10
+        t.startsWith("الدراسة") || t.startsWith("حفظ القرآن") -> 20
         t.startsWith("تنظيف البيت") -> 40
         t.startsWith("عمل الغدا") -> 30
         t.startsWith("عمل العشا") -> 20
@@ -182,6 +200,28 @@ object Seed {
             }
             all += out
         }
-        return all
+        return all + extras()
+    }
+
+    /**
+     * مهام عمرو اليومية: الصلوات والدراسة وحفظ القرآن. أوقات الصلاة تقريبية وتتغير خلال السنة،
+     * فعدّليها من الجدول الزمني. كل مهمة: (الاسم، البداية، آخر موعد).
+     */
+    fun extras(): List<Task> {
+        val out = mutableListOf<Task>()
+        fun add(d: Int, t: String, h1: Int, m1: Int, h2: Int, m2: Int) {
+            val s = h1 * 60 + m1
+            out += Task("", t, "O", d, s, h2 * 60 + m2 - s, pointsFor(t))
+        }
+        for (d in 0..6) {
+            add(d, "صلاة الفجر", 4, 50, 6, 15)
+            add(d, "صلاة الظهر", 11, 35, 14, 30)
+            add(d, "صلاة العصر", 14, 35, 16, 50)
+            add(d, "صلاة المغرب", 16, 55, 18, 15)
+            add(d, "صلاة العشاء", 18, 20, 21, 0)
+            if (d <= 4) add(d, "الدراسة", 16, 0, 18, 0)
+            add(d, "حفظ القرآن", 19, 0, 20, 0)
+        }
+        return out
     }
 }

@@ -27,7 +27,7 @@ import androidx.compose.ui.unit.sp
 import java.time.LocalDate
 import kotlin.math.roundToInt
 
-private const val T_START = 6 * 60
+private const val T_START = 4 * 60
 private const val T_END = 24 * 60
 private const val DP_PER_MIN = 1.6f
 private const val SNAP = 15
@@ -65,7 +65,10 @@ private fun packColumns(list: List<Task>): Map<String, Pair<Int, Int>> {
 
 /** جدول زمني لليوم: عمود لكل شخص، والمهام تنسحب لتغيير وقتها ومدتها. */
 @Composable
-fun TimelineEditor(members: List<Member>, tasks: List<Task>, today: LocalDate, onSave: (Task) -> Unit, onDelete: (String) -> Unit) {
+fun TimelineEditor(
+    members: List<Member>, tasks: List<Task>, today: LocalDate,
+    onSave: (Task) -> Unit, onDelete: (String) -> Unit, onRename: (String, String) -> Unit,
+) {
     var day by remember { mutableIntStateOf(Rules.dayIndex(today)) }
     var who by remember { mutableStateOf("all") }
     var editing by remember { mutableStateOf<Task?>(null) }
@@ -112,7 +115,7 @@ fun TimelineEditor(members: List<Member>, tasks: List<Task>, today: LocalDate, o
                     // عمود الساعات: ثابت على الطرف ويتحرك بالطول مع الجدول
                     Box(Modifier.width(AXIS_W).fillMaxHeight().verticalScroll(vs)) {
                         Box(Modifier.height(total).fillMaxWidth()) {
-                            for (h in 6..23) {
+                            for (h in T_START / 60..23) {
                                 Text(
                                     hourLabel(h), fontSize = 11.sp, color = muted, textAlign = TextAlign.Center,
                                     modifier = Modifier.fillMaxWidth().offset(y = ((h * 60 - T_START) * DP_PER_MIN).dp),
@@ -154,7 +157,12 @@ fun TimelineEditor(members: List<Member>, tasks: List<Task>, today: LocalDate, o
     if (e != null) {
         TaskDialog(
             e, members,
-            onSave = { t -> editing = null; onSave(t) },
+            onSave = { t ->
+                editing = null
+                // الاسم الجديد يمشي على كل المهام اللي لها نفس الاسم القديم
+                if (e.id.isNotEmpty() && t.title != e.title) onRename(e.title, t.title)
+                onSave(t)
+            },
             onDelete = if (e.id.isEmpty()) null else ({ editing = null; onDelete(e.id) }),
             onDismiss = { editing = null },
         )

@@ -5,6 +5,12 @@ plugins {
     id("com.google.gms.google-services")
 }
 
+// مفتاح Gemini ينقرأ من local.properties (سطر: GEMINI_API_KEY=...). هذا الملف ما ينرفع على GitHub.
+val localProps = java.util.Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+
 android {
     namespace = "com.hayooka.hometasks"
     compileSdk = 35
@@ -14,6 +20,7 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1"
+        buildConfigField("String", "GEMINI_KEY", "\"${localProps.getProperty("GEMINI_API_KEY", "")}\"")
     }
     buildTypes { release { isMinifyEnabled = false } }
     compileOptions {
@@ -21,7 +28,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 }
 
 dependencies {

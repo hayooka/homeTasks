@@ -45,7 +45,7 @@ class Repo {
             house(code),
             mapOf(
                 "name" to name, "grace" to 30, "startDate" to LocalDate.now().toString(),
-                "penalties" to DEFAULT_PENALTIES, "owner" to (auth.uid ?: ""),
+                "penalties" to DEFAULT_PENALTIES, "owner" to (auth.uid ?: ""), "seedVersion" to 2,
             ),
         )
         for (m in Seed.members) {
@@ -79,6 +79,7 @@ class Repo {
                         s.getString("name") ?: "", (s.getLong("grace") ?: 30L).toInt(), s.getString("startDate") ?: "", pen,
                         s.getString("aiKey") ?: "", s.getString("aiModel") ?: "",
                         s.getBoolean("enforce") ?: false, s.getString("enforceDate") ?: "", (s.getLong("enforceMin") ?: 0L).toInt(),
+                        (s.getLong("seedVersion") ?: 1L).toInt(),
                     ),
                 )
             }
@@ -90,8 +91,9 @@ class Repo {
         Member(
             it.id, it.getString("name") ?: "", it.getString("age") ?: "adult",
             (it.getLong("character") ?: -1L).toInt(), it.getString("pinHash") ?: "",
-            it.getBoolean("leader") ?: false, it.getLong("total") ?: 0L,
+            it.getBoolean("leader") ?: false, it.getDouble("total") ?: 0.0,
             it.getLong("guardAt") ?: 0L, it.getBoolean("guardOk") ?: false,
+            (it.getLong("streak") ?: 0L).toInt(), it.getString("streakDate") ?: "",
         )
     }
 
@@ -106,22 +108,74 @@ class Repo {
     /** كل الإنجازات من تاريخ معيّن (yyyy-MM-dd) وطالع. */
     fun doneFlow(code: String, since: String): Flow<List<Done>> =
         done(code).whereGreaterThanOrEqualTo("date", since).asFlow {
-            Done(it.getString("taskId") ?: "", it.getString("memberId") ?: "", it.getString("date") ?: "", (it.getLong("points") ?: 0L).toInt(), (it.getLong("at") ?: -1L).toInt())
+            Done(it.getString("taskId") ?: "", it.getString("memberId") ?: "", it.getString("date") ?: "", it.getDouble("points") ?: 0.0, (it.getLong("at") ?: -1L).toInt(), it.getBoolean("ok") ?: true)
         }
 
     // ---------- كتابة ----------
 
-    suspend fun complete(code: String, t: Task, date: String, points: Int, nowMin: Int) {
+    /** ok = false للمهمة المتأخرة: تنسجل بس نقاطها ما تنضاف لحد ما الليدر توافق. */
+    suspend fun complete(code: String, t: Task, date: String, points: Double, at: Int, ok: Boolean) {
         val b = db.batch()
-        b.set(done(code).document("${date}_${t.id}"), mapOf("taskId" to t.id, "memberId" to t.memberId, "date" to date, "points" to points, "at" to nowMin))
-        b.update(members(code).document(t.memberId), "total", FieldValue.increment(points.toLong()))
+        b.set(
+            done(code).document("${date}_${t.id}"),
+            mapOf("taskId" to t.id, "memberId" to t.memberId, "date" to date, "points" to points, "at" to at, "ok" to ok),
+        )
+        if (ok) b.update(members(code).document(t.memberId), "total", FieldValue.increment(points))
         b.commit().await()
     }
 
-    suspend fun undo(code: String, t: Task, date: String, points: Int) {
+    suspend fun undo(code: String, t: Task, date: String, d: Done) {
         val b = db.batch()
         b.delete(done(code).document("${date}_${t.id}"))
-        b.update(members(code).document(t.memberId), "total", FieldValue.increment(-points.toLong()))
+        if (d.ok) b.update(members(code).document(t.memberId), "total", FieldValue.increment(-d.points))
+        b.commit().await()
+    }
+
+    /** موافقة الليدر على مهمة متأخرة: تنحسب نقاطها. */
+    suspend fun approve(code: String, d: Done) {
+        val b = db.batch()
+        b.update(done(code).document("${d.date}_${d.taskId}"), "ok", true)
+        b.update(members(code).document(d.memberId), "total", FieldValue.increment(d.points))
+        b.commit().await()
+    }
+
+    /** رفض الليدر: المهمة ترجع غير معمولة. */
+    suspend fun reject(code: String, d: Done) {
+        done(code).document("${d.date}_${d.taskId}").delete().await()
+    }
+
+    /** يوم كامل بوقته: السلسلة تزيد يوم، والمكافأة نص نقطة عن كل يوم بالسلسلة. مرة وحدة باليوم. */
+    suspend fun awardStreak(code: String, m: Member, today: java.time.LocalDate) {
+        val date = today.toString()
+        if (m.streakDate == date) return
+        val streak = if (m.streakDate == today.minusDays(1).toString()) m.streak + 1 else 1
+        val bonus = 0.5 * streak
+        val b = db.batch()
+        b.update(members(code).document(m.id), mapOf("streak" to streak, "streakDate" to date, "total" to FieldValue.increment(bonus)))
+        b.set(
+            done(code).document("${date}_streak_${m.id}"),
+            mapOf("taskId" to "streak", "memberId" to m.id, "date" to date, "points" to bonus, "at" to -1, "ok" to true),
+        )
+        b.commit().await()
+    }
+
+    /** تغيير اسم مهمة يغيّر كل المهام اللي لها نفس الاسم، بكل الأيام ولكل الأشخاص. */
+    suspend fun renameTasks(code: String, old: String, new: String) {
+        val docs = tasks(code).whereEqualTo("title", old).get().await().documents
+        if (docs.isEmpty()) return
+        val b = db.batch()
+        for (d in docs) b.update(d.reference, "title", new)
+        b.commit().await()
+    }
+
+    /** يضيف مهام عمرو الجديدة (الصلوات والدراسة والحفظ) لبيت موجود، مرة وحدة وبدون تكرار. */
+    suspend fun migrateV2(code: String) {
+        val existing = tasks(code).get().await().documents
+            .map { Triple(it.getString("title") ?: "", it.getString("memberId") ?: "", (it.getLong("day") ?: 0L).toInt()) }.toSet()
+        val hasOmar = members(code).document("O").get().await().exists()
+        val b = db.batch()
+        if (hasOmar) for (t in Seed.extras()) if (Triple(t.title, t.memberId, t.day) !in existing) b.set(tasks(code).document(), taskMap(t))
+        b.update(house(code), "seedVersion", 2)
         b.commit().await()
     }
 

@@ -59,13 +59,24 @@ fun Home(repo: Repo, code: String, meId: String, onLogout: () -> Unit) {
     val toggle: (Task, Done?) -> Unit = { t, d ->
         scope.launch {
             try {
-                if (d != null) repo.undo(code, t, date, d.points)
-                else repo.complete(code, t, date, Rules.pointsNow(t, nowMin, house.grace), nowMin)
+                if (d != null) repo.undo(code, t, date, d)
+                else {
+                    // المتأخرة تنتظر موافقة الليدر (إلا مهام الليدر نفسها)
+                    val late = Rules.isLate(t, nowMin, house.grace)
+                    repo.complete(code, t, date, Rules.pointsNow(t, nowMin, house.grace).toDouble(), nowMin, !late || me.leader)
+                    if (!late) {
+                        val mine = tasks.filter { it.memberId == me.id && it.day == Rules.dayIndex(today) }
+                        if (Rules.allOnTime(mine, done.filter { it.date == date }, t.id, house.grace)) repo.awardStreak(code, me, today)
+                    }
+                }
             } catch (e: Exception) { ctx.toast("ما انحفظ، تأكد من الإنترنت") }
         }
     }
 
     LaunchedEffect(Unit) { Guard.start(ctx) }
+    LaunchedEffect(house.seedVersion, me.leader) {
+        if (me.leader && house.seedVersion < 2) try { repo.migrateV2(code) } catch (e: Exception) { }
+    }
 
     val pages = if (me.leader) listOf("مهامي", "الترتيب", "الإدارة") else listOf("مهامي", "الترتيب")
     val pager = rememberPagerState(pageCount = { pages.size })
@@ -78,7 +89,7 @@ fun Home(repo: Repo, code: String, meId: String, onLogout: () -> Unit) {
         HorizontalPager(state = pager, modifier = Modifier.weight(1f)) { page ->
             when (page) {
                 0 -> TodayPage(me, house, tasks, done, today, nowMin, toggle)
-                1 -> RankPage(members, done, weekStart.toString(), meId, onLogout)
+                1 -> RankPage(members, done, weekStart.toString(), meId, house, tasks, today, nowMin, onLogout)
                 else -> ManagePage(repo, code, house, members, tasks, done, today)
             }
         }
@@ -92,7 +103,8 @@ fun TodayPage(me: Member, house: House, tasks: List<Task>, done: List<Done>, tod
     val date = today.toString()
     val mine = tasks.filter { it.memberId == me.id && it.day == Rules.dayIndex(today) }.sortedBy { it.start }
     val doneToday = done.filter { it.date == date }.associateBy { it.taskId }
-    val earned = mine.sumOf { doneToday[it.id]?.points ?: 0 }
+    val earned = mine.sumOf { t -> doneToday[t.id]?.takeIf { it.ok }?.points ?: 0.0 }
+    val streak = Rules.streakNow(me, today)
     val possible = mine.sumOf { it.points }
 
     val st = Penalty.forMember(house, me, tasks, done, today, nowMin)
@@ -102,20 +114,25 @@ fun TodayPage(me: Member, house: House, tasks: List<Task>, done: List<Done>, tod
         val kind = ((me.character % 6) + 6) % 6
         val level = Rules.level(me.total)
         val left = Rules.LEVEL_SIZE - (me.total % Rules.LEVEL_SIZE)
-        val allDone = mine.isNotEmpty() && mine.all { doneToday[it.id] != null }
+        val allDone = mine.isNotEmpty() && mine.all { doneToday[it.id]?.ok == true }
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Box(contentAlignment = Alignment.Center) {
                 Box(Modifier.size(230.dp).clip(CircleShape).background(CHARACTER_COLORS[kind].copy(alpha = 0.16f)))
                 CharacterView(me.character, level, Modifier.size(200.dp))
             }
             Text("${me.name} · ${CHARACTER_NAMES[kind]}", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            Text("المستوى $level · ${me.total} نقطة", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("المستوى $level · ${Rules.pts(me.total)} نقطة", color = MaterialTheme.colorScheme.onSurfaceVariant)
             LinearProgressIndicator(progress = { Rules.levelProgress(me.total) }, modifier = Modifier.width(230.dp))
-            Text("باقي $left نقطة للمستوى الجاي", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("باقي ${Rules.pts(left)} نقطة للمستوى الجاي", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                if (streak > 0) "سلسلة $streak أيام · مكافأة اليوم الكامل الجاي +${Rules.pts(0.5 * (streak + if (me.streakDate == date) 0 else 1))}"
+                else "خلّص كل مهامك بوقتها وابدأ سلسلة: +0.5 أول يوم، وتزيد نص نقطة كل يوم",
+                fontSize = 12.sp, color = MaterialTheme.colorScheme.primary,
+            )
         }
         Text(
-            if (allDone) "${DAY_NAMES[Rules.dayIndex(today)]} · خلصت كل مهامك! $earned نقطة"
-            else "${DAY_NAMES[Rules.dayIndex(today)]} · نقاط اليوم $earned من $possible",
+            if (allDone) "${DAY_NAMES[Rules.dayIndex(today)]} · خلصت كل مهامك! ${Rules.pts(earned)} نقطة"
+            else "${DAY_NAMES[Rules.dayIndex(today)]} · نقاط اليوم ${Rules.pts(earned)} من $possible",
             fontWeight = FontWeight.Medium,
         )
 
@@ -151,7 +168,8 @@ fun TodayPage(me: Member, house: House, tasks: List<Task>, done: List<Done>, tod
                         )
                     }
                     val label = when {
-                        d != null -> "تم +${d.points}"
+                        d != null && !d.ok -> "بانتظار موافقة الليدر"
+                        d != null -> "تم +${Rules.pts(d.points)}"
                         late -> "متأخر · ${Rules.pointsNow(t, nowMin, house.grace)} من ${t.points}"
                         else -> "${t.points} نقطة"
                     }
@@ -168,13 +186,18 @@ fun TodayPage(me: Member, house: House, tasks: List<Task>, done: List<Done>, tod
 // ---------------- الترتيب ----------------
 
 @Composable
-fun RankPage(members: List<Member>, done: List<Done>, weekStart: String, meId: String, onLogout: () -> Unit) {
-    val week = done.filter { it.date >= weekStart }.groupBy { it.memberId }.mapValues { e -> e.value.sumOf { it.points } }
-    val ranked = members.sortedByDescending { week[it.id] ?: 0 }
+fun RankPage(
+    members: List<Member>, done: List<Done>, weekStart: String, meId: String,
+    house: House, tasks: List<Task>, today: LocalDate, nowMin: Int, onLogout: () -> Unit,
+) {
+    val week = done.filter { it.ok && it.date >= weekStart }.groupBy { it.memberId }.mapValues { e -> e.value.sumOf { it.points } }
+    val ranked = members.sortedByDescending { week[it.id] ?: 0.0 }
+    val penalties = members.map { it to Penalty.forMember(house, it, tasks, done, today, nowMin) }.filter { it.second.missed > 0 }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("ترتيب هذا الأسبوع", fontSize = 20.sp, fontWeight = FontWeight.Bold)
         ranked.forEachIndexed { i, m ->
-            val pts = week[m.id] ?: 0
+            val pts = week[m.id] ?: 0.0
+            val streak = Rules.streakNow(m, today)
             val first = i == 0 && pts > 0
             Card(
                 Modifier.fillMaxWidth(),
@@ -185,13 +208,29 @@ fun RankPage(members: List<Member>, done: List<Done>, weekStart: String, meId: S
                     if (m.character >= 0) CharacterView(m.character, Rules.level(m.total), Modifier.size(52.dp)) else Spacer(Modifier.size(52.dp))
                     Column(Modifier.weight(1f)) {
                         Text(m.name + if (m.id == meId) " (أنت)" else "", fontWeight = FontWeight.Medium)
-                        Text("المستوى ${Rules.level(m.total)}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("المستوى ${Rules.level(m.total)}" + if (streak > 0) " · سلسلة $streak أيام" else "", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Text("$pts", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    Text(Rules.pts(pts), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                 }
             }
         }
         Text("الترتيب يبدأ من جديد كل يوم أحد. المستوى يضل معك.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+        HorizontalDivider()
+        Text("عقوبات اليوم", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        if (!house.enforce) {
+            Text("العقوبات متوقفة حالياً.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else if (penalties.isEmpty()) {
+            Text("ما في عقوبات على أحد اليوم.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        for ((m, st) in penalties) {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                Column(Modifier.padding(12.dp)) {
+                    Text("${m.name} · فاتته ${st.missed} مهام", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
+                    Text(Penalty.describe(st, m), color = MaterialTheme.colorScheme.onErrorContainer)
+                }
+            }
+        }
         TextButton(onClick = onLogout) { Text("تسجيل خروج") }
     }
 }
@@ -226,6 +265,7 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                 members, tasks, today,
                 onSave = { t -> act { repo.saveTask(code, t) } },
                 onDelete = { id -> act { repo.deleteTask(code, id) } },
+                onRename = { old, new -> act { repo.renameTasks(code, old, new) } },
             )
         } else if (tab == "ai") {
             AssistantTab(repo, code, house, members)
@@ -237,21 +277,78 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
             "today" -> {
                 val date = today.toString()
                 val nowMin = java.time.LocalTime.now().let { it.hour * 60 + it.minute }
+                var open by remember { mutableStateOf("") }
+                val names = members.associate { it.id to it.name }
+                val titles = tasks.associate { it.id to it.title }
+                val muted = MaterialTheme.colorScheme.onSurfaceVariant
+
+                // المهام المتأخرة تنتظر موافقة الليدر قبل ما تنحسب
+                val pending = done.filter { it.date == date && !it.ok }
+                if (pending.isNotEmpty()) {
+                    Text("بانتظار موافقتك", fontWeight = FontWeight.Bold)
+                    for (p in pending) {
+                        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("${names[p.memberId] ?: ""} · ${titles[p.taskId] ?: "مهمة محذوفة"}", fontWeight = FontWeight.Medium)
+                                Text("أشّر عليها ${Rules.fmt(p.at.coerceAtLeast(0))} متأخرة · ${Rules.pts(p.points)} نقطة", fontSize = 12.sp)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(onClick = { act { repo.approve(code, p) } }) { Text("موافقة") }
+                                    OutlinedButton(onClick = { act { repo.reject(code, p) } }) { Text("رفض") }
+                                }
+                            }
+                        }
+                    }
+                    HorizontalDivider()
+                }
+
                 for (m in members) {
-                    val mine = tasks.filter { it.memberId == m.id && it.day == Rules.dayIndex(today) }
-                    val d = done.filter { it.date == date && it.memberId == m.id }
-                    Card(Modifier.fillMaxWidth()) {
+                    val mine = tasks.filter { it.memberId == m.id && it.day == Rules.dayIndex(today) }.sortedBy { it.start + it.dur }
+                    val dm = done.filter { it.date == date && it.memberId == m.id && it.taskId != "streak" }.associateBy { it.taskId }
+                    val okCount = mine.count { dm[it.id]?.ok == true }
+                    val earned = mine.sumOf { t -> dm[t.id]?.takeIf { it.ok }?.points ?: 0.0 }
+                    Card(Modifier.fillMaxWidth().clickable { open = if (open == m.id) "" else m.id }) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Row {
                                 Text(m.name, Modifier.weight(1f), fontWeight = FontWeight.Bold)
-                                Text("${d.size} من ${mine.size} · ${d.sumOf { it.points }} نقطة")
+                                Text("$okCount من ${mine.size} · ${Rules.pts(earned)} نقطة")
                             }
-                            LinearProgressIndicator(progress = { if (mine.isEmpty()) 0f else d.size / mine.size.toFloat() }, modifier = Modifier.fillMaxWidth())
+                            LinearProgressIndicator(progress = { if (mine.isEmpty()) 0f else okCount / mine.size.toFloat() }, modifier = Modifier.fillMaxWidth())
                             val st = Penalty.forMember(house, m, tasks, done, today, nowMin)
                             if (st.missed > 0) Text("فاتته ${st.missed} · ${Penalty.describe(st, m)}", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
                             val stale = System.currentTimeMillis() - m.guardAt > 20 * 60_000
                             if (house.enforce && Penalty.enforcedOnPhone(m) && (stale || !m.guardOk)) {
                                 Text("العقوبات مو مفعّلة على جواله حالياً", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                            }
+                            val streak = Rules.streakNow(m, today)
+                            if (streak > 0) Text("سلسلة $streak أيام", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+
+                            if (open != m.id) {
+                                Text("اضغطي لعرض مهامه والتأشير عنه", fontSize = 11.sp, color = muted)
+                            } else {
+                                for (t in mine) {
+                                    val d = dm[t.id]
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Checkbox(
+                                            checked = d != null,
+                                            onCheckedChange = {
+                                                if (d != null) act { repo.undo(code, t, date, d) }
+                                                else act {
+                                                    // تأشير الليدر عن العضو: تنحسب بوقتها وبنقاطها كاملة
+                                                    repo.complete(code, t, date, t.points.toDouble(), minOf(nowMin, t.start + t.dur), true)
+                                                    if (Rules.allOnTime(mine, dm.values.toList(), t.id, house.grace)) repo.awardStreak(code, m, today)
+                                                }
+                                            },
+                                        )
+                                        Column(Modifier.weight(1f)) {
+                                            Text(t.title)
+                                            Text(
+                                                "آخر موعد ${Rules.fmt(t.start + t.dur)}" + if (d != null && !d.ok) " · بانتظار الموافقة" else "",
+                                                fontSize = 12.sp, color = muted,
+                                            )
+                                        }
+                                        Text("${t.points}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                    }
+                                }
                             }
                         }
                     }
