@@ -74,7 +74,12 @@ class Repo {
             if (s != null && s.exists()) {
                 val pen = (s.get("penalties") as? Map<*, *>)?.entries
                     ?.associate { it.key.toString() to it.value.toString() } ?: emptyMap()
-                trySend(House(s.getString("name") ?: "", (s.getLong("grace") ?: 30L).toInt(), s.getString("startDate") ?: "", pen))
+                trySend(
+                    House(
+                        s.getString("name") ?: "", (s.getLong("grace") ?: 30L).toInt(), s.getString("startDate") ?: "", pen,
+                        s.getString("aiKey") ?: "", s.getString("aiModel") ?: "",
+                    ),
+                )
             }
         }
         awaitClose { reg.remove() }
@@ -133,6 +138,16 @@ class Repo {
     suspend fun saveTask(code: String, t: Task) {
         val ref = if (t.id.isEmpty()) tasks(code).document() else tasks(code).document(t.id)
         ref.set(taskMap(t)).await()
+    }
+
+    suspend fun addTasks(code: String, list: List<Task>) {
+        val b = db.batch()
+        for (t in list) b.set(tasks(code).document(), taskMap(t))
+        b.commit().await()
+    }
+
+    suspend fun saveAi(code: String, key: String, model: String) {
+        house(code).update(mapOf("aiKey" to key, "aiModel" to model)).await()
     }
 
     suspend fun deleteTask(code: String, id: String) {

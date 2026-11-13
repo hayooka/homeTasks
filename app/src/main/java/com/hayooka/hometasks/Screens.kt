@@ -206,7 +206,7 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
 
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-            Chips(listOf("today" to "اليوم", "tasks" to "المهام", "members" to "الأعضاء", "settings" to "الإعدادات"), tab) { tab = it }
+            Chips(listOf("today" to "اليوم", "tasks" to "المهام", "ai" to "المساعد", "members" to "الأعضاء", "settings" to "الإعدادات"), tab) { tab = it }
         }
         if (tab == "tasks") {
             TimelineEditor(
@@ -214,6 +214,8 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                 onSave = { t -> act { repo.saveTask(code, t) } },
                 onDelete = { id -> act { repo.deleteTask(code, id) } },
             )
+        } else if (tab == "ai") {
+            AssistantTab(repo, code, house, members)
         } else Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),

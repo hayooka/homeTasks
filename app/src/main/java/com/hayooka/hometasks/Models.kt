@@ -17,7 +17,10 @@ data class Task(
 
 data class Done(val taskId: String, val memberId: String, val date: String, val points: Int)
 
-data class House(val name: String, val grace: Int, val startDate: String, val penalties: Map<String, String>)
+data class House(
+    val name: String, val grace: Int, val startDate: String, val penalties: Map<String, String>,
+    val aiKey: String, val aiModel: String,
+)
 
 val DAY_NAMES = listOf("الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت")
 val AGE_KEYS = listOf("u10", "u16", "adult")
