@@ -149,16 +149,17 @@ fun Welcome(repo: Repo, onCreated: (String) -> Unit, onJoined: (String) -> Unit)
             }
             "join" -> {
                 OutlinedTextField(
-                    value = joinCode, onValueChange = { joinCode = it.uppercase().filter { ch -> ch.isLetterOrDigit() }.take(6) },
+                    value = joinCode, onValueChange = { joinCode = it.uppercase().filter { ch -> ch.isLetterOrDigit() }.take(12) },
                     label = { Text("كود البيت") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                 )
                 Button(
-                    enabled = !busy && joinCode.length == 6, modifier = Modifier.fillMaxWidth(),
+                    enabled = !busy && joinCode.length >= 4, modifier = Modifier.fillMaxWidth(),
                     onClick = {
                         busy = true
                         scope.launch {
                             try {
-                                if (repo.houseExists(joinCode)) onJoined(joinCode) else ctx.toast("ما لقينا بيت بهذا الكود")
+                                val real = repo.resolveCode(joinCode)
+                                if (real != null) onJoined(real) else ctx.toast("ما لقينا بيت بهذا الكود")
                             } catch (e: Exception) { ctx.toast("صار خطأ بالاتصال") }
                             busy = false
                         }

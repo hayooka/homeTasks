@@ -42,6 +42,27 @@ class Repo {
 
     suspend fun houseExists(code: String): Boolean = house(code).get().await().exists()
 
+    /** يحوّل اللي انكتب في شاشة الدخول لكود البيت الحقيقي: إما هو نفسه، أو كود اختاره القائد. null = ما في بيت. */
+    suspend fun resolveCode(input: String): String? {
+        if (houseExists(input)) return input
+        val real = db.collection("codes").document(input).get().await().getString("house") ?: return null
+        return if (real.isNotEmpty() && houseExists(real)) real else null
+    }
+
+    /** يحط كود دخول جديد للبيت ويعطّل القديم. يرجّع false إذا الكود مأخوذ. */
+    suspend fun setAlias(code: String, old: String, alias: String): Boolean {
+        if (houseExists(alias)) return false
+        val ref = db.collection("codes").document(alias)
+        val owner = ref.get().await().getString("house") ?: ""
+        if (owner.isNotEmpty() && owner != code) return false
+        val b = db.batch()
+        b.set(ref, mapOf("house" to code))
+        if (old.isNotEmpty() && old != alias) b.set(db.collection("codes").document(old), mapOf("house" to ""))
+        b.update(house(code), "alias", alias)
+        b.commit().await()
+        return true
+    }
+
     /** ينشئ البيت ويعبّيه بأعضاء العائلة وجدولها. يرجّع كود البيت. */
     suspend fun createHouse(name: String, leaderPin: String): String {
         val alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
@@ -85,7 +106,7 @@ class Repo {
                         s.getString("name") ?: "", (s.getLong("grace") ?: 30L).toInt(), s.getString("startDate") ?: "", pen,
                         s.getString("aiKey") ?: "", s.getString("aiModel") ?: "",
                         s.getBoolean("enforce") ?: false, s.getString("enforceDate") ?: "", (s.getLong("enforceMin") ?: 0L).toInt(),
-                        (s.getLong("seedVersion") ?: 1L).toInt(), s.getString("uninstallHash") ?: "",
+                        (s.getLong("seedVersion") ?: 1L).toInt(), s.getString("uninstallHash") ?: "", s.getString("alias") ?: "",
                     ),
                 )
             }

@@ -2,6 +2,11 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // كود البيت هو اسم المستند: اللي ما يعرف الكود ما يقدر يوصل، وممنوع عرض قائمة البيوت
+    // أكواد الدخول اللي يختارها القائد: كل مستند يدل على البيت الحقيقي
+    match /codes/{alias} {
+      allow get, create, update: if request.auth != null;
+      allow list, delete: if false;
+    }
     match /houses/{code} {
       allow get, create, update: if request.auth != null;
       allow list, delete: if false;

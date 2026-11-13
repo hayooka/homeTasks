@@ -595,11 +595,39 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
 
             else -> {
                 var grace by remember(house.grace) { mutableIntStateOf(house.grace) }
+                val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+                val shown = house.alias.ifBlank { code }
+                var newCode by remember { mutableStateOf("") }
                 Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(12.dp)) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("كود البيت", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(code, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(shown, Modifier.weight(1f), fontSize = 28.sp, fontWeight = FontWeight.Black)
+                            Button(onClick = {
+                                clipboard.setText(androidx.compose.ui.text.AnnotatedString(shown))
+                                ctx.toast("انسخ الكود")
+                            }) { Text("نسخ") }
+                        }
                         Text("أعطيه لإخوانك عشان يدخلون.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        HorizontalDivider()
+                        Text("تغيير الكود", fontWeight = FontWeight.Bold)
+                        OutlinedTextField(
+                            newCode, { v -> newCode = v.uppercase().filter { it.isLetterOrDigit() }.take(12) },
+                            label = { Text("كود جديد (4 إلى 12 حرف أو رقم)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                        )
+                        Button(
+                            enabled = newCode.length >= 4 && newCode != shown,
+                            onClick = {
+                                val v = newCode
+                                act {
+                                    if (repo.setAlias(code, house.alias, v)) { newCode = ""; ctx.toast("تغيّر الكود") } else ctx.toast("هذا الكود مأخوذ، جربي غيره")
+                                }
+                            },
+                        ) { Text("حفظ الكود الجديد") }
+                        Text(
+                            "اللي دخلوا قبل ما يتأثرون. الكود القديم اللي اخترتيه يتعطل، بس الكود الأصلي ($code) يبقى شغال دايماً.",
+                            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
                 Stepper("مهلة بعد آخر موعد", "$grace د", { grace = (grace - 5).coerceAtLeast(0) }, { grace = (grace + 5).coerceAtMost(180) })

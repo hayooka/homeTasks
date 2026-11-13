@@ -35,6 +35,8 @@ data class House(
     val seedVersion: Int,
     /** بصمة كلمة السر اللي يحتاجها الأعضاء للخروج أو لإلغاء حماية الحذف. */
     val uninstallHash: String,
+    /** كود دخول يختاره القائد بدل الكود الأصلي. فاضي = ما في. */
+    val alias: String,
 )
 
 fun secretHash(code: String, secret: String): String =
