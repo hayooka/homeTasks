@@ -349,6 +349,17 @@ fun RankPage(
         val me = members.firstOrNull { it.id == meId }
         val guarded = house.enforce && me != null && Penalty.enforcedOnPhone(me)
         var ask by remember { mutableStateOf("") }
+        HorizontalDivider()
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("الوضع الفاتح", Modifier.weight(1f), fontWeight = FontWeight.Medium)
+            Switch(
+                checked = LightMode.value,
+                onCheckedChange = { on ->
+                    LightMode.value = on
+                    ctx.getSharedPreferences("session", android.content.Context.MODE_PRIVATE).edit().putBoolean("light", on).apply()
+                },
+            )
+        }
         TextButton(onClick = { if (guarded) ask = "logout" else onLogout() }) { Text("تسجيل خروج") }
         if (guarded && Guard.adminReady(ctx)) TextButton(onClick = { ask = "admin" }) { Text("إلغاء حماية الحذف") }
         if (ask.isNotEmpty()) {

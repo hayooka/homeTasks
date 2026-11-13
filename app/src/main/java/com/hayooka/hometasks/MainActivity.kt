@@ -33,7 +33,18 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { App() }
+        LightMode.value = getSharedPreferences("session", Context.MODE_PRIVATE).getBoolean("light", false)
+        setContent {
+            // أيقونات شريط الحالة تتبع الوضع عشان تبقى واضحة
+            val light = LightMode.value
+            SideEffect {
+                androidx.core.view.WindowCompat.getInsetsController(window, window.decorView).apply {
+                    isAppearanceLightStatusBars = light
+                    isAppearanceLightNavigationBars = light
+                }
+            }
+            App()
+        }
     }
 }
 
