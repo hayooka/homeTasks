@@ -18,8 +18,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** الوضع الفاتح، يختاره كل واحد على جواله من صفحة الترتيب. */
-val LightMode = mutableStateOf(false)
+/** الوضع الفاتح هو الأساسي، وكل واحد يقدر يبدّل للغامق على جواله من صفحة الترتيب. */
+val LightMode = mutableStateOf(true)
 
 // ألوان الواجهة: ليل بنفسجي مع نيون، أو نسخة فاتحة بنفس الألوان بدرجات أغمق عشان تنقرأ
 val GNeon: Color get() = if (LightMode.value) Color(0xFF0B8F83) else Color(0xFF5EEAD4)

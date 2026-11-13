@@ -33,7 +33,7 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        LightMode.value = getSharedPreferences("session", Context.MODE_PRIVATE).getBoolean("light", false)
+        LightMode.value = getSharedPreferences("session", Context.MODE_PRIVATE).getBoolean("light", true)
         setContent {
             // أيقونات شريط الحالة تتبع الوضع عشان تبقى واضحة
             val light = LightMode.value
