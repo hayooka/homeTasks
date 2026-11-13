@@ -421,7 +421,7 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                 onRename = { old, new -> act { repo.renameTasks(code, old, new) } },
             )
         } else if (tab == "ai") {
-            AssistantTab(repo, code, house, members)
+            AssistantTab(repo, code, house, members, tasks, done, today)
         } else Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),

@@ -257,6 +257,15 @@ class Repo {
         house(code).update("uninstallHash", hash).await()
     }
 
+    /** ينفذ تغييرات المساعد بعد موافقة القائد: إضافة، تعديل، وحذف، كلها مع بعض. */
+    suspend fun applyAi(code: String, adds: List<Task>, edits: List<Task>, deletes: List<String>) {
+        val b = db.batch()
+        for (t in adds) b.set(tasks(code).document(), taskMap(t))
+        for (t in edits) b.set(tasks(code).document(t.id), taskMap(t))
+        for (id in deletes) b.delete(tasks(code).document(id))
+        b.commit().await()
+    }
+
     suspend fun saveAi(code: String, key: String, model: String) {
         house(code).update(mapOf("aiKey" to key, "aiModel" to model)).await()
     }
