@@ -28,9 +28,10 @@ object Ai {
             الأعضاء (المعرّف = الاسم): $people
             الأيام بالأرقام: 0 الأحد، 1 الاثنين، 2 الثلاثاء، 3 الأربعاء، 4 الخميس، 5 الجمعة، 6 السبت.
             أرجع JSON فقط بهذا الشكل:
-            {"reply": "جملة قصيرة بالعربي", "tasks": [{"title": "اسم المهمة", "member": "معرّف العضو", "days": [0, 1], "start": "17:30", "dur": 15, "points": 10}]}
+            {"reply": "جملة قصيرة بالعربي", "tasks": [{"title": "اسم المهمة", "member": "معرّف العضو", "days": [0, 1], "start": "17:00", "deadline": "17:30", "points": 10}]}
             القواعد:
-            - start بصيغة 24 ساعة HH:MM، و dur بالدقايق.
+            - start متى تبدأ المهمة و deadline آخر موعد لازم تخلص قبله، الاثنين بصيغة 24 ساعة HH:MM.
+            - إذا الليدر ذكر وقت واحد بس اعتبره آخر موعد، وخلي start قبله بنص ساعة.
             - "كل يوم" يعني الأيام السبعة كلها. "أيام المدرسة" يعني من 0 إلى 4.
             - إذا المهمة على أكثر من شخص، كرّر العنصر لكل شخص.
             - النقاط حسب التعب: خفيفة 5، متوسطة 10 إلى 15، ثقيلة 20 إلى 30، إلا إذا حددها الليدر.
@@ -63,7 +64,9 @@ object Ai {
             val days = (0 until d.length()).map { d.optInt(it, -1) }.filter { it in 0..6 }.distinct().sorted()
             val start = parseTime(o.optString("start"))
             if (title.isEmpty() || member == null || days.isEmpty() || start == null) continue
-            out += Proposal(title, member.id, days, start, o.optInt("dur", 15).coerceIn(5, 240), o.optInt("points", 5).coerceIn(1, 100))
+            val deadline = parseTime(o.optString("deadline"))
+            val dur = if (deadline != null && deadline > start) deadline - start else 30
+            out += Proposal(title, member.id, days, start, dur, o.optInt("points", 5).coerceIn(1, 100))
         }
         return AiReply(obj.optString("reply").ifBlank { if (out.isEmpty()) "ما فهمت الطلب، ممكن توضحين؟" else "جهزت المهام." }, out, raw)
     }

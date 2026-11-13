@@ -103,7 +103,7 @@ fun AssistantTab(repo: Repo, code: String, house: House, members: List<Member>) 
             }
             if (bubbles.isEmpty()) {
                 Text(
-                    "مثال: ضيفي لحمزة سقي الزرع كل يوم الساعة 5 العصر، ربع ساعة، 10 نقاط.",
+                    "مثال: ضيفي لحمزة سقي الزرع كل يوم، آخر موعد 5 العصر، 10 نقاط.",
                     fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -117,7 +117,7 @@ fun AssistantTab(repo: Repo, code: String, house: House, members: List<Member>) 
                     ) { Text(b.text, Modifier.padding(10.dp)) }
                 }
             }
-            if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            if (busy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
 
             if (proposals.isNotEmpty()) {
                 Card(Modifier.fillMaxWidth()) {
@@ -131,7 +131,7 @@ fun AssistantTab(repo: Repo, code: String, house: House, members: List<Member>) 
                                     fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                                 Text(
-                                    "${Rules.fmt(p.start)} · ${p.dur} د · ${p.points} نقطة",
+                                    "من ${Rules.fmt(p.start)} · آخر موعد ${Rules.fmt(p.start + p.dur)} · ${p.points} نقطة",
                                     fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }

@@ -87,7 +87,7 @@ fun TimelineEditor(members: List<Member>, tasks: List<Task>, today: LocalDate, o
             Chips(listOf("all" to "الكل") + members.map { it.id to it.name }, who) { who = it }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { editing = Task("", "", (lanes.firstOrNull() ?: members.first()).id, day, 16 * 60, 30, 5) }) { Text("مهمة جديدة") }
-                Text("اسحبي الشريط الملوّن لتغيير الوقت، والحافة السفلية للمدة. اضغطي المهمة للتعديل.", fontSize = 11.sp, lineHeight = 14.sp, color = muted)
+                Text("اسحبي الشريط الملوّن لتحريك المهمة، والحافة السفلية لتغيير آخر موعد. اضغطي المهمة للتعديل.", fontSize = 11.sp, lineHeight = 14.sp, color = muted)
             }
         }
 
@@ -99,10 +99,10 @@ fun TimelineEditor(members: List<Member>, tasks: List<Task>, today: LocalDate, o
                     Spacer(Modifier.width(AXIS_W))
                     Row(Modifier.weight(1f).horizontalScroll(hs)) {
                         for (m in lanes) {
-                            val mins = dayTasks.filter { it.memberId == m.id }.sumOf { it.dur }
+                            val count = dayTasks.count { it.memberId == m.id }
                             Column(Modifier.width(laneW).padding(horizontal = 6.dp, vertical = 4.dp)) {
                                 Text(m.name, fontWeight = FontWeight.Bold, color = colors[m.id] ?: MaterialTheme.colorScheme.primary)
-                                Text("${mins / 60}س ${mins % 60}د", fontSize = 11.sp, color = muted)
+                                Text("$count مهام", fontSize = 11.sp, color = muted)
                             }
                         }
                     }
@@ -198,7 +198,7 @@ private fun TaskBlock(t: Task, color: Color, col: Int, cols: Int, laneW: Dp, pxP
                     maxLines = if (dur >= 30) 2 else 1, overflow = TextOverflow.Ellipsis,
                 )
                 if (dur >= 30) {
-                    Text("${Rules.fmt(start)} · $dur د", fontSize = 10.sp, lineHeight = 12.sp, maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("لحد ${Rules.fmt(start + dur)}", fontSize = 10.sp, lineHeight = 12.sp, maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }

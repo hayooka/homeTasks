@@ -133,7 +133,7 @@ fun TodayPage(me: Member, house: House, tasks: List<Task>, done: List<Done>, tod
                     Column(Modifier.weight(1f)) {
                         Text(t.title, fontWeight = FontWeight.Medium, textDecoration = if (d != null) TextDecoration.LineThrough else null)
                         Text(
-                            "${Rules.fmt(t.start)} إلى ${Rules.fmt(t.start + t.dur)}",
+                            "من ${Rules.fmt(t.start)} · آخر موعد ${Rules.fmt(t.start + t.dur)}",
                             fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -285,8 +285,8 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                         Text("أعطيه لإخوانك عشان يدخلون.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                Stepper("المهلة بعد وقت المهمة", "$grace د", { grace = (grace - 5).coerceAtLeast(0) }, { grace = (grace + 5).coerceAtMost(180) })
-                Text("بعد المهلة تنقص النقاط 10% كل ربع ساعة لحد النص.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Stepper("مهلة بعد آخر موعد", "$grace د", { grace = (grace - 5).coerceAtLeast(0) }, { grace = (grace + 5).coerceAtMost(180) })
+                Text("اللي يخلص قبل آخر موعد (مع المهلة) ياخذ النقاط كاملة، وبعدها تنقص 10% كل ربع ساعة لحد النص.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 HorizontalDivider()
                 Text("العقوبات", fontWeight = FontWeight.Bold)
                 Text("خفيفة إذا فاتته مهمة أو أكثر، وثقيلة إذا فاته أكثر من نص مهام اليوم.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -328,8 +328,12 @@ fun TaskDialog(initial: Task, members: List<Member>, onSave: (Task) -> Unit, onD
                 OutlinedTextField(t.title, { t = t.copy(title = it.take(60)) }, label = { Text("اسم المهمة") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Chips(members.map { it.id to it.name }, t.memberId) { t = t.copy(memberId = it) }
                 Chips(DAY_NAMES.mapIndexed { i, n -> i.toString() to n }, t.day.toString()) { t = t.copy(day = it.toInt()) }
-                Stepper("تبدأ", Rules.fmt(t.start), { t = t.copy(start = (t.start - 15).coerceAtLeast(0)) }, { t = t.copy(start = (t.start + 15).coerceAtMost(23 * 60 + 45)) })
-                Stepper("المدة", "${t.dur} د", { t = t.copy(dur = (t.dur - 5).coerceAtLeast(5)) }, { t = t.copy(dur = (t.dur + 5).coerceAtMost(240)) })
+                // البداية تتحرك وآخر موعد يبقى ثابت، وآخر موعد يتحرك والبداية تبقى ثابتة
+                val deadline = t.start + t.dur
+                fun moveStart(s: Int) { val ns = s.coerceIn(0, deadline - 5); t = t.copy(start = ns, dur = deadline - ns) }
+                fun moveDeadline(d: Int) { t = t.copy(dur = d.coerceIn(t.start + 5, 24 * 60) - t.start) }
+                Stepper("تبدأ", Rules.fmt(t.start), { moveStart(t.start - 15) }, { moveStart(t.start + 15) })
+                Stepper("آخر موعد", Rules.fmt(deadline), { moveDeadline(deadline - 15) }, { moveDeadline(deadline + 15) })
                 OutlinedTextField(
                     pts, { v -> pts = v.filter { it.isDigit() }.take(3) }, label = { Text("النقاط") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth(),

@@ -9,7 +9,7 @@ data class Member(
     val pinHash: String, val leader: Boolean, val total: Long,
 )
 
-/** day: 0 = الأحد … 6 = السبت. start و dur بالدقايق. */
+/** day: 0 = الأحد … 6 = السبت. start بالدقايق من أول اليوم، وآخر موعد للمهمة = start + dur. */
 data class Task(
     val id: String, val title: String, val memberId: String,
     val day: Int, val start: Int, val dur: Int, val points: Int,
@@ -41,7 +41,7 @@ object Rules {
     fun dayIndex(d: LocalDate): Int = d.dayOfWeek.value % 7
     fun weekStart(d: LocalDate): LocalDate = d.minusDays(dayIndex(d).toLong())
 
-    /** النقاط كاملة لحد نهاية المهمة + المهلة، وبعدها تنقص 10% كل ربع ساعة لحد النص. */
+    /** النقاط كاملة لحد آخر موعد + المهلة، وبعدها تنقص 10% كل ربع ساعة لحد النص. */
     fun pointsNow(t: Task, nowMin: Int, grace: Int): Int {
         val deadline = t.start + t.dur + grace
         if (nowMin <= deadline) return t.points
