@@ -75,7 +75,7 @@ private fun LockScreen(onClose: () -> Unit) {
                                 Text("كان آخر موعد ${Rules.fmt(t.start + t.dur)}", fontSize = 12.sp, color = Color(0xFFB8C4D0))
                             }
                             if (t.id in pending) {
-                                Text("بانتظار موافقة اللقائد", fontSize = 12.sp, color = Color(0xFF5CC4BF))
+                                Text("بانتظار موافقة القائد", fontSize = 12.sp, color = Color(0xFF5CC4BF))
                             } else Button(onClick = {
                                 val code = Guard.code ?: return@Button
                                 val nowMin = now.hour * 60 + now.minute

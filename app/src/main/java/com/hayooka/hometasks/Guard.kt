@@ -63,7 +63,7 @@ object Penalty {
         return PenaltyState(missed.size, overdue, until, missed.size >= 4 && overdue.isNotEmpty())
     }
 
-    /** هل العقوبة تتنفذ فعلياً على جوال هذا الشخص؟ اللقائد والصغار (عقوبتهم التلفزيون) لا. */
+    /** هل العقوبة تتنفذ فعلياً على جوال هذا الشخص؟ القائد والصغار (عقوبتهم التلفزيون) لا. */
     fun enforcedOnPhone(m: Member) = !m.leader && m.age != "u10"
 
     fun describe(st: PenaltyState, m: Member): String = when {
@@ -85,7 +85,7 @@ object Penalty {
 object Guard {
     val lock = mutableStateOf(false)
     val overdue = mutableStateOf<List<Task>>(emptyList())
-    /** مهام فايتة أشّر عليها العضو وتنتظر موافقة اللقائد. */
+    /** مهام فايتة أشّر عليها العضو وتنتظر موافقة القائد. */
     val pending = mutableStateOf<Set<String>>(emptySet())
     val member = mutableStateOf<Member?>(null)
     @Volatile var code: String? = null

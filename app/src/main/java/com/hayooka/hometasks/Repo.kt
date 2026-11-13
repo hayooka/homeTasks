@@ -138,7 +138,7 @@ class Repo {
         b.commit().await()
     }
 
-    /** موافقة اللقائد على مهمة متأخرة: تنحسب نقاطها. */
+    /** موافقة القائد على مهمة متأخرة: تنحسب نقاطها. */
     suspend fun approve(code: String, d: Done) {
         val b = db.batch()
         b.update(done(code).document("${d.date}_${d.taskId}"), "ok", true)
@@ -146,7 +146,7 @@ class Repo {
         b.commit().await()
     }
 
-    /** رفض اللقائد: المهمة ترجع غير معمولة. */
+    /** رفض القائد: المهمة ترجع غير معمولة. */
     suspend fun reject(code: String, d: Done) {
         done(code).document("${d.date}_${d.taskId}").delete().await()
     }
@@ -263,7 +263,7 @@ class Repo {
         b.commit().await()
     }
 
-    /** موافقة اللقائد على نقاط مهمة شخصية. إذا صاحبها أشّر عليها اليوم وهي تنتظر، تنحسب له بالنقاط الموافق عليها. */
+    /** موافقة القائد على نقاط مهمة شخصية. إذا صاحبها أشّر عليها اليوم وهي تنتظر، تنحسب له بالنقاط الموافق عليها. */
     suspend fun approvePersonal(code: String, memberId: String, title: String, points: Int, pending: Done?) {
         val docs = personalDocs(code, memberId, title)
         val b = db.batch()

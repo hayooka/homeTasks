@@ -65,7 +65,7 @@ fun Home(repo: Repo, code: String, meId: String, onLogout: () -> Unit) {
             try {
                 if (d != null) repo.undo(code, t, date, d)
                 else {
-                    // المتأخرة تنتظر موافقة اللقائد (إلا مهام اللقائد نفسها)
+                    // المتأخرة تنتظر موافقة القائد (إلا مهام القائد نفسها)
                     val late = Rules.isLate(t, nowMin, house.grace)
                     var pts = Rules.pointsNow(t, nowMin, house.grace).toDouble()
                     if (t.personal) {
@@ -74,7 +74,7 @@ fun Home(repo: Repo, code: String, meId: String, onLogout: () -> Unit) {
                         val got = done.filter { it.date == date && it.memberId == me.id && it.ok && it.taskId in ids }.sumOf { it.points }
                         pts = minOf(pts, (Personal.MAX_DAY - got).coerceAtLeast(0.0))
                     }
-                    // المتأخرة والشخصية اللي لسا ما انوافق على نقاطها تنتظر اللقائد
+                    // المتأخرة والشخصية اللي لسا ما انوافق على نقاطها تنتظر القائد
                     repo.complete(code, t, date, pts, nowMin, (!late || me.leader) && (!t.personal || t.approved))
                     if (!late) {
                         val mine = tasks.filter { it.memberId == me.id && it.day == Rules.dayIndex(today) }
@@ -190,7 +190,7 @@ fun TodayPage(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("مهامي الشخصية", fontWeight = FontWeight.Bold)
-                Text("أنت تضيفها وتعدلها. بدون عقوبة، والنقاط بعد موافقة اللقائد.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("أنت تضيفها وتعدلها. بدون عقوبة، والنقاط بعد موافقة القائد.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             OutlinedButton(onClick = { adding = true }) { Text("إضافة") }
         }
@@ -206,7 +206,7 @@ fun TodayPage(
                 adding = false
                 scope.launch {
                     try {
-                        // الاقتراحات الجاهزة موافق عليها بنقاطها، وغيرها يقدّرها المساعد وتنتظر اللقائد
+                        // الاقتراحات الجاهزة موافق عليها بنقاطها، وغيرها يقدّرها المساعد وتنتظر القائد
                         val sug = Personal.suggestions.firstOrNull { it.title == title }
                         val key = house.aiKey.ifBlank { BuildConfig.GEMINI_KEY }
                         val points = sug?.points ?: if (key.isBlank()) 5 else try {
@@ -255,9 +255,9 @@ private fun TaskRow(t: Task, d: Done?, nowMin: Int, grace: Int, onToggle: (Task,
                 if (onEdit != null) TextButton(onClick = onEdit, contentPadding = PaddingValues(0.dp)) { Text("تعديل", fontSize = 12.sp) }
             }
             val label = when {
-                d != null && !d.ok -> "بانتظار موافقة اللقائد"
+                d != null && !d.ok -> "بانتظار موافقة القائد"
                 d != null -> "تم +${Rules.pts(d.points)}"
-                t.personal && !t.approved -> "مقترح ${t.points} · ينتظر اللقائد"
+                t.personal && !t.approved -> "مقترح ${t.points} · ينتظر القائد"
                 late -> "متأخر · ${Rules.pointsNow(t, nowMin, grace)} من ${t.points}"
                 else -> "${t.points} نقطة"
             }
@@ -438,7 +438,7 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                 val titles = tasks.associate { it.id to it.title }
                 val muted = MaterialTheme.colorScheme.onSurfaceVariant
 
-                // المهام المتأخرة تنتظر موافقة اللقائد قبل ما تنحسب
+                // المهام المتأخرة تنتظر موافقة القائد قبل ما تنحسب
                 val fresh = tasks.filter { it.personal && !it.approved }
                 val freshIds = fresh.map { it.id }.toSet()
                 val pending = done.filter { it.date == date && !it.ok && it.taskId !in freshIds }
@@ -509,7 +509,7 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                                             onCheckedChange = {
                                                 if (d != null) act { repo.undo(code, t, date, d) }
                                                 else act {
-                                                    // تأشير اللقائد عن العضو: تنحسب بوقتها وبنقاطها كاملة
+                                                    // تأشير القائد عن العضو: تنحسب بوقتها وبنقاطها كاملة
                                                     repo.complete(code, t, date, t.points.toDouble(), minOf(nowMin, t.start + t.dur), true)
                                                     if (Rules.allOnTime(mine, dm.values.toList(), t.id, house.grace)) repo.awardStreak(code, m, today)
                                                 }
@@ -540,7 +540,7 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                         onAdd = { title, days, start, dur ->
                             personalFor = null
                             act {
-                                // إضافة اللقائد موافق عليها مباشرة؛ النقاط من الاقتراح الجاهز أو من تقدير المساعد
+                                // إضافة القائد موافق عليها مباشرة؛ النقاط من الاقتراح الجاهز أو من تقدير المساعد
                                 val sug = Personal.suggestions.firstOrNull { it.title == title }
                                 val key = house.aiKey.ifBlank { BuildConfig.GEMINI_KEY }
                                 val points = sug?.points ?: if (key.isBlank()) 5 else try {
@@ -623,7 +623,7 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                 Text(
                     "المهمة الفايتة الأولى = ساعة بدون إنترنت، الثانية = ساعتين، الثالثة = 3 ساعات، والرابعة = قفل الجوال لحد ما تنعمل كل المهام الفايتة. " +
                         "الحساب يبدأ من لحظة التشغيل، وكل شي يتصفّر آخر اليوم. إيقافه من هنا يفك أي قطع أو قفل فوراً. " +
-                        "ما ينطبق على جوال اللقائد ولا على اللي تحت 10.",
+                        "ما ينطبق على جوال القائد ولا على اللي تحت 10.",
                     fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 

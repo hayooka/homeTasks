@@ -169,7 +169,7 @@ fun Welcome(repo: Repo, onCreated: (String) -> Unit, onJoined: (String) -> Unit)
             else -> {
                 OutlinedTextField(houseName, { houseName = it.take(30) }, label = { Text("اسم البيت") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 PinField(pin, { pin = it }, "رقمك السري (4 أرقام)")
-                Text("ينشأ البيت جاهز بأعضاء العائلة وجدول الأسبوع، وأنتِ اللقائد.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("ينشأ البيت جاهز بأعضاء العائلة وجدول الأسبوع، وأنتِ القائد.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Button(
                     enabled = !busy && pin.length == 4 && houseName.isNotBlank(), modifier = Modifier.fillMaxWidth(),
                     onClick = {
