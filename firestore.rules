@@ -1,0 +1,13 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // كود البيت هو اسم المستند: اللي ما يعرف الكود ما يقدر يوصل، وممنوع عرض قائمة البيوت
+    match /houses/{code} {
+      allow get, create, update: if request.auth != null;
+      allow list, delete: if false;
+      match /{sub}/{doc} {
+        allow read, write: if request.auth != null;
+      }
+    }
+  }
+}
