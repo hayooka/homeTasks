@@ -9,6 +9,8 @@ data class Member(
     val pinHash: String, val leader: Boolean, val total: Double,
     val guardAt: Long = 0, val guardOk: Boolean = false,
     val streak: Int = 0, val streakDate: String = "",
+    /** اللي يتمناه إذا طلع الأول بالشهر. */
+    val wish: String = "",
 )
 
 /** day: 0 = الأحد … 6 = السبت. start بالدقايق من أول اليوم، وآخر موعد للمهمة = start + dur. */

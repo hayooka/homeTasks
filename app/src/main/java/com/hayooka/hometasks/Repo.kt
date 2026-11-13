@@ -16,6 +16,9 @@ import java.time.LocalDate
  * كل البيانات تحت houses/{code}:
  *   members/{id}  tasks/{id}  done/{date_taskId}
  */
+/** مكافأة اللي يخلص كل مهام يومه بوقتها. */
+const val DAILY_BONUS = 12.0
+
 /** رقم آخر دفعة مهام في الجدول الأصلي. */
 const val SEED_VERSION = 3
 
@@ -96,7 +99,7 @@ class Repo {
             (it.getLong("character") ?: -1L).toInt(), it.getString("pinHash") ?: "",
             it.getBoolean("leader") ?: false, it.getDouble("total") ?: 0.0,
             it.getLong("guardAt") ?: 0L, it.getBoolean("guardOk") ?: false,
-            (it.getLong("streak") ?: 0L).toInt(), it.getString("streakDate") ?: "",
+            (it.getLong("streak") ?: 0L).toInt(), it.getString("streakDate") ?: "", it.getString("wish") ?: "",
         )
     }
 
@@ -148,12 +151,12 @@ class Repo {
         done(code).document("${d.date}_${d.taskId}").delete().await()
     }
 
-    /** يوم كامل بوقته: السلسلة تزيد يوم، والمكافأة نص نقطة عن كل يوم بالسلسلة. مرة وحدة باليوم. */
+    /** يوم كامل بوقته: مكافأة ثابتة، ومعها نص نقطة عن كل يوم بالسلسلة. مرة وحدة باليوم. */
     suspend fun awardStreak(code: String, m: Member, today: java.time.LocalDate) {
         val date = today.toString()
         if (m.streakDate == date) return
         val streak = if (m.streakDate == today.minusDays(1).toString()) m.streak + 1 else 1
-        val bonus = 0.5 * streak
+        val bonus = DAILY_BONUS + 0.5 * streak
         val b = db.batch()
         b.update(members(code).document(m.id), mapOf("streak" to streak, "streakDate" to date, "total" to FieldValue.increment(bonus)))
         b.set(
@@ -223,6 +226,10 @@ class Repo {
     /** نبضة من خدمة الحراسة على جوال العضو: آخر وقت كانت شغالة وهل صلاحياتها كاملة. */
     suspend fun beat(code: String, memberId: String, ok: Boolean) {
         members(code).document(memberId).update(mapOf("guardAt" to System.currentTimeMillis(), "guardOk" to ok)).await()
+    }
+
+    suspend fun setWish(code: String, memberId: String, wish: String) {
+        members(code).document(memberId).update("wish", wish).await()
     }
 
     suspend fun setUninstallHash(code: String, hash: String) {

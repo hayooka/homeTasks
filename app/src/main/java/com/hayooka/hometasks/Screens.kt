@@ -43,7 +43,9 @@ fun Home(repo: Repo, code: String, meId: String, onLogout: () -> Unit) {
 
     val today = now.toLocalDate()
     val weekStart = Rules.weekStart(today)
-    val since = weekStart.minusDays(1).toString() // يوم زيادة عشان نحسب عقوبة مهام أمس
+    // نحمّل من أول الشهر (لترتيب الشهر) أو من قبل بداية الأسبوع بيوم، الأقدم منهم
+    val monthStart = today.withDayOfMonth(1)
+    val since = (if (monthStart < weekStart.minusDays(1)) monthStart else weekStart.minusDays(1)).toString()
     val done by remember(code, since) { repo.doneFlow(code, since) }.collectAsState(initial = emptyList())
 
     val house = houseState
@@ -103,7 +105,7 @@ fun Home(repo: Repo, code: String, meId: String, onLogout: () -> Unit) {
         HorizontalPager(state = pager, modifier = Modifier.weight(1f)) { page ->
             when (page) {
                 0 -> TodayPage(repo, code, me, house, tasks, done, today, nowMin, toggle)
-                1 -> RankPage(code, members, done, weekStart.toString(), meId, house, tasks, today, nowMin, onLogout)
+                1 -> RankPage(repo, code, members, done, weekStart.toString(), monthStart.toString(), meId, house, tasks, today, nowMin, onLogout)
                 else -> ManagePage(repo, code, house, members, tasks, done, today)
             }
         }
@@ -157,8 +159,8 @@ fun TodayPage(
             XpBar(Rules.levelProgress(me.total), Modifier.fillMaxWidth(0.82f))
             Text("باقي ${Rules.pts(left)} نقطة للمستوى الجاي", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(
-                if (streak > 0) "مكافأة اليوم الكامل الجاي +${Rules.pts(0.5 * (streak + if (me.streakDate == date) 0 else 1))}"
-                else "خلّص كل مهامك بوقتها وابدأ سلسلة: +0.5 أول يوم، وتزيد نص نقطة كل يوم",
+                if (streak > 0) "مكافأة اليوم الكامل الجاي +${Rules.pts(DAILY_BONUS + 0.5 * (streak + if (me.streakDate == date) 0 else 1))}"
+                else "خلّص كل مهامك بوقتها: +12 نقطة عن كل يوم كامل، ومعها سلسلة تزيد نص نقطة كل يوم",
                 fontSize = 12.sp, color = GNeon,
             )
         }
@@ -268,16 +270,20 @@ private fun TaskRow(t: Task, d: Done?, nowMin: Int, grace: Int, onToggle: (Task,
 
 @Composable
 fun RankPage(
-    code: String, members: List<Member>, done: List<Done>, weekStart: String, meId: String,
+    repo: Repo, code: String, members: List<Member>, done: List<Done>, weekStart: String, monthStart: String, meId: String,
     house: House, tasks: List<Task>, today: LocalDate, nowMin: Int, onLogout: () -> Unit,
 ) {
-    val week = done.filter { it.ok && it.date >= weekStart }.groupBy { it.memberId }.mapValues { e -> e.value.sumOf { it.points } }
-    val ranked = members.sortedByDescending { week[it.id] ?: 0.0 }
+    val scope = rememberCoroutineScope()
+    var period by remember { mutableStateOf("week") }
+    val from = if (period == "week") weekStart else monthStart
+    val sums = done.filter { it.ok && it.date >= from }.groupBy { it.memberId }.mapValues { e -> e.value.sumOf { it.points } }
+    val ranked = members.sortedByDescending { sums[it.id] ?: 0.0 }
     val penalties = members.map { it to Penalty.forMember(house, it, tasks, done, today, nowMin) }.filter { it.second.missed > 0 }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("ترتيب هذا الأسبوع", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text("الترتيب", fontSize = 22.sp, fontWeight = FontWeight.Black)
+        Chips(listOf("week" to "هذا الأسبوع", "month" to "هذا الشهر"), period) { period = it }
         ranked.forEachIndexed { i, m ->
-            val pts = week[m.id] ?: 0.0
+            val pts = sums[m.id] ?: 0.0
             val streak = Rules.streakNow(m, today)
             val first = i == 0 && pts > 0
             Card(
@@ -285,17 +291,43 @@ fun RankPage(
                 colors = CardDefaults.cardColors(containerColor = if (first) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface),
             ) {
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("${i + 1}", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.width(24.dp), textAlign = TextAlign.Center)
-                    if (m.character >= 0) CharacterView(m.character, Rules.level(m.total), Modifier.size(52.dp)) else Spacer(Modifier.size(52.dp))
+                    Text("${i + 1}", fontSize = 22.sp, fontWeight = FontWeight.Black, modifier = Modifier.width(26.dp), textAlign = TextAlign.Center, color = if (first) GGold else MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (m.character >= 0) CharacterView(m.character, Rules.level(m.total), Modifier.size(56.dp)) else Spacer(Modifier.size(56.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(m.name + if (m.id == meId) " (أنت)" else "", fontWeight = FontWeight.Medium)
+                        Text(m.name + if (m.id == meId) " (أنت)" else "", fontWeight = FontWeight.Bold)
                         Text("المستوى ${Rules.level(m.total)}" + if (streak > 0) " · سلسلة $streak أيام" else "", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        // أمنية كل واحد تبان في ترتيب الشهر
+                        if (period == "month" && m.wish.isNotBlank()) Text("أمنيته: ${m.wish}", fontSize = 12.sp, color = GGold)
                     }
-                    Text(Rules.pts(pts), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    Pill(Rules.pts(pts), if (first) GGold else GNeon)
                 }
             }
         }
-        Text("الترتيب يبدأ من جديد كل يوم أحد. المستوى يضل معك.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            if (period == "week") "ترتيب الأسبوع يبدأ من جديد كل يوم أحد. المستوى يضل معك."
+            else "الأول بنهاية الشهر تتحقق أمنيته. الترتيب يبدأ من جديد أول كل شهر.",
+            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        // صندوق الأمنية
+        val mine = members.firstOrNull { it.id == meId }
+        if (mine != null) {
+            var wish by remember(mine.wish) { mutableStateOf(mine.wish) }
+            val ctxWish = LocalContext.current
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("أمنيتي إذا طلعت الأول هذا الشهر", fontWeight = FontWeight.Bold, color = GGold)
+                    OutlinedTextField(wish, { wish = it.take(80) }, placeholder = { Text("اكتب اللي تبغاه…") }, modifier = Modifier.fillMaxWidth(), maxLines = 2)
+                    Button(
+                        enabled = wish.trim() != mine.wish,
+                        onClick = {
+                            val v = wish.trim()
+                            scope.launch { try { repo.setWish(code, meId, v); ctxWish.toast("انحفظت أمنيتك") } catch (x: Exception) { ctxWish.toast("ما انحفظت، تأكد من الإنترنت") } }
+                        },
+                    ) { Text("حفظ الأمنية") }
+                }
+            }
+        }
 
         HorizontalDivider()
         Text("عقوبات اليوم", fontSize = 20.sp, fontWeight = FontWeight.Bold)
