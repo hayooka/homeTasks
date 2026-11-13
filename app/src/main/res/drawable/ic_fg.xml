@@ -1,6 +1,17 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#FFFFFF" android:pathData="M54,30 L80,52 L80,78 L28,78 L28,52 Z" />
-    <path android:strokeColor="#0D6B6B" android:strokeWidth="6" android:strokeLineCap="round" android:strokeLineJoin="round"
-        android:pathData="M42,61 L51,70 L67,52" />
+    <!-- شخصية "نجمة": أذنين، جسم، عيون وابتسامة، ومعها علامة صح -->
+    <path android:fillColor="#F2B33D" android:pathData="M33,47 L36,28 L48,40 Z" />
+    <path android:fillColor="#F2B33D" android:pathData="M75,47 L72,28 L60,40 Z" />
+    <path android:fillColor="#F2B33D"
+        android:pathData="M41,37 h26 a11,11 0 0 1 11,11 v20 a11,11 0 0 1 -11,11 h-26 a11,11 0 0 1 -11,-11 v-20 a11,11 0 0 1 11,-11 z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M39.5,55 a5.5,5.5 0 1 0 11,0 a5.5,5.5 0 1 0 -11,0" />
+    <path android:fillColor="#FFFFFF" android:pathData="M57.5,55 a5.5,5.5 0 1 0 11,0 a5.5,5.5 0 1 0 -11,0" />
+    <path android:fillColor="#1B2430" android:pathData="M42.9,55.6 a2.7,2.7 0 1 0 5.4,0 a2.7,2.7 0 1 0 -5.4,0" />
+    <path android:fillColor="#1B2430" android:pathData="M60.9,55.6 a2.7,2.7 0 1 0 5.4,0 a2.7,2.7 0 1 0 -5.4,0" />
+    <path android:strokeColor="#1B2430" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M48.5,65 Q54,70.5 59.5,65" />
+    <path android:fillColor="#FFFFFF" android:pathData="M65,75 a9,9 0 1 0 18,0 a9,9 0 1 0 -18,0" />
+    <path android:strokeColor="#0D6B6B" android:strokeWidth="2.8" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M69.8,75.2 L73,78.4 L78.6,71.6" />
 </vector>
