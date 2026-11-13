@@ -83,7 +83,7 @@ fun Home(repo: Repo, code: String, meId: String, onLogout: () -> Unit) {
 
     LaunchedEffect(Unit) { Guard.start(ctx) }
     LaunchedEffect(house.seedVersion, me.leader) {
-        if (me.leader && house.seedVersion < 2) try { repo.migrateV2(code) } catch (e: Exception) { }
+        if (me.leader && house.seedVersion < SEED_VERSION) try { repo.migrateSeed(code, house.seedVersion) } catch (e: Exception) { }
     }
 
     val pages = if (me.leader) listOf("مهامي", "الترتيب", "الإدارة") else listOf("مهامي", "الترتيب")

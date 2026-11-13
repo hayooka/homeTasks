@@ -116,7 +116,7 @@ object Seed {
     val SPECIAL_DAYS = setOf(4, 5)
 
     fun pointsFor(t: String): Int = when {
-        t.startsWith("صلاة") -> 10
+        t.startsWith("صلاة") || t.startsWith("الاستحمام") -> 10
         t.startsWith("الدراسة") || t.startsWith("حفظ القرآن") -> 20
         t.startsWith("تنظيف البيت") -> 40
         t.startsWith("عمل الغدا") -> 30
@@ -205,7 +205,7 @@ object Seed {
             }
             all += out
         }
-        return all + extras()
+        return all + extras() + extrasV3()
     }
 
     /**
@@ -226,6 +226,22 @@ object Seed {
             add(d, "صلاة العشاء", 18, 20, 21, 0)
             if (d <= 4) add(d, "الدراسة", 16, 0, 18, 0)
             add(d, "حفظ القرآن", 19, 0, 20, 0)
+        }
+        return out
+    }
+
+    /** إضافة ثانية لعمرو: تفريش الأسنان الصبح وبالليل كل يوم، والاستحمام الثلاثاء والخميس والسبت بالليل. */
+    fun extrasV3(): List<Task> {
+        val out = mutableListOf<Task>()
+        fun add(d: Int, t: String, h1: Int, m1: Int, h2: Int, m2: Int) {
+            val s = h1 * 60 + m1
+            out += Task("", t, "O", d, s, h2 * 60 + m2 - s, pointsFor(t))
+        }
+        for (d in 0..6) {
+            // الجمعة والسبت بدون مدرسة، فموعد الصبح أوسع
+            if (d >= 5) add(d, "تفريش الأسنان الصبح", 8, 0, 10, 0) else add(d, "تفريش الأسنان الصبح", 6, 15, 7, 0)
+            add(d, "تفريش الأسنان بالليل", 20, 0, 21, 0)
+            if (d == 2 || d == 4 || d == 6) add(d, "الاستحمام", 19, 30, 21, 0)
         }
         return out
     }

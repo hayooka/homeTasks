@@ -16,6 +16,9 @@ import java.time.LocalDate
  * كل البيانات تحت houses/{code}:
  *   members/{id}  tasks/{id}  done/{date_taskId}
  */
+/** رقم آخر دفعة مهام في الجدول الأصلي. */
+const val SEED_VERSION = 3
+
 class Repo {
     private val db = FirebaseFirestore.getInstance()
     private val auth = FirebaseAuth.getInstance()
@@ -45,7 +48,7 @@ class Repo {
             house(code),
             mapOf(
                 "name" to name, "grace" to 30, "startDate" to LocalDate.now().toString(),
-                "penalties" to DEFAULT_PENALTIES, "owner" to (auth.uid ?: ""), "seedVersion" to 2,
+                "penalties" to DEFAULT_PENALTIES, "owner" to (auth.uid ?: ""), "seedVersion" to SEED_VERSION,
             ),
         )
         for (m in Seed.members) {
@@ -169,14 +172,18 @@ class Repo {
         b.commit().await()
     }
 
-    /** يضيف مهام عمرو الجديدة (الصلوات والدراسة والحفظ) لبيت موجود، مرة وحدة وبدون تكرار. */
-    suspend fun migrateV2(code: String) {
+    /**
+     * يضيف لبيت موجود المهام اللي انضافت للجدول الأصلي بعد إنشائه، مرة وحدة لكل دفعة وبدون تكرار.
+     * كل دفعة تنضاف بس إذا البيت ما وصلها، عشان اللي انحذف أو تعدّل من دفعة قديمة ما يرجع.
+     */
+    suspend fun migrateSeed(code: String, from: Int) {
         val existing = tasks(code).get().await().documents
             .map { Triple(it.getString("title") ?: "", it.getString("memberId") ?: "", (it.getLong("day") ?: 0L).toInt()) }.toSet()
         val hasOmar = members(code).document("O").get().await().exists()
+        val fresh = (if (from < 2) Seed.extras() else emptyList()) + (if (from < 3) Seed.extrasV3() else emptyList())
         val b = db.batch()
-        if (hasOmar) for (t in Seed.extras()) if (Triple(t.title, t.memberId, t.day) !in existing) b.set(tasks(code).document(), taskMap(t))
-        b.update(house(code), "seedVersion", 2)
+        if (hasOmar) for (t in fresh) if (Triple(t.title, t.memberId, t.day) !in existing) b.set(tasks(code).document(), taskMap(t))
+        b.update(house(code), "seedVersion", SEED_VERSION)
         b.commit().await()
     }
 
