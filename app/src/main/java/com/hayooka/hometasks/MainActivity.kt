@@ -66,6 +66,7 @@ fun App() {
     fun save(c: String?, m: String?) {
         code = c; me = m
         prefs.edit().putString("code", c).putString("me", m).apply()
+        if (c == null || m == null) Guard.stop(ctx)
     }
 
     MaterialTheme(colorScheme = if (isSystemInDarkTheme()) Dark else Light) {

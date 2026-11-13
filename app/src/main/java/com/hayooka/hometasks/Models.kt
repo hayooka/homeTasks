@@ -7,6 +7,7 @@ import kotlin.math.roundToInt
 data class Member(
     val id: String, val name: String, val age: String, val character: Int,
     val pinHash: String, val leader: Boolean, val total: Long,
+    val guardAt: Long = 0, val guardOk: Boolean = false,
 )
 
 /** day: 0 = الأحد … 6 = السبت. start بالدقايق من أول اليوم، وآخر موعد للمهمة = start + dur. */
@@ -15,11 +16,13 @@ data class Task(
     val day: Int, val start: Int, val dur: Int, val points: Int,
 )
 
-data class Done(val taskId: String, val memberId: String, val date: String, val points: Int)
+/** at: الدقيقة من اليوم اللي تأشّرت فيها المهمة، و-1 إذا مو معروفة. */
+data class Done(val taskId: String, val memberId: String, val date: String, val points: Int, val at: Int)
 
 data class House(
     val name: String, val grace: Int, val startDate: String, val penalties: Map<String, String>,
     val aiKey: String, val aiModel: String,
+    val enforce: Boolean, val enforceDate: String, val enforceMin: Int,
 )
 
 val DAY_NAMES = listOf("الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت")

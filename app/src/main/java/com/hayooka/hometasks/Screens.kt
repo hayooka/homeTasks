@@ -60,10 +60,12 @@ fun Home(repo: Repo, code: String, meId: String, onLogout: () -> Unit) {
         scope.launch {
             try {
                 if (d != null) repo.undo(code, t, date, d.points)
-                else repo.complete(code, t, date, Rules.pointsNow(t, nowMin, house.grace))
+                else repo.complete(code, t, date, Rules.pointsNow(t, nowMin, house.grace), nowMin)
             } catch (e: Exception) { ctx.toast("ما انحفظ، تأكد من الإنترنت") }
         }
     }
+
+    LaunchedEffect(Unit) { Guard.start(ctx) }
 
     val pages = if (me.leader) listOf("مهامي", "الترتيب", "الإدارة") else listOf("مهامي", "الترتيب")
     val pager = rememberPagerState(pageCount = { pages.size })
@@ -93,11 +95,7 @@ fun TodayPage(me: Member, house: House, tasks: List<Task>, done: List<Done>, tod
     val earned = mine.sumOf { doneToday[it.id]?.points ?: 0 }
     val possible = mine.sumOf { it.points }
 
-    val yesterday = today.minusDays(1)
-    val yTasks = tasks.filter { it.memberId == me.id && it.day == Rules.dayIndex(yesterday) }
-    val yDone = done.filter { it.date == yesterday.toString() && it.memberId == me.id }.map { it.taskId }.toSet()
-    val counted = house.startDate.isNotEmpty() && yesterday.toString() >= house.startDate
-    val penalty = if (counted) Rules.penalty(house, me.age, yTasks.count { it.id !in yDone }, yTasks.size) else null
+    val st = Penalty.forMember(house, me, tasks, done, today, nowMin)
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         // الشخصية هي أول وأكبر شي بالصفحة
@@ -121,12 +119,13 @@ fun TodayPage(me: Member, house: House, tasks: List<Task>, done: List<Done>, tod
             fontWeight = FontWeight.Medium,
         )
 
-        if (penalty != null) {
+        if (house.enforce && Penalty.enforcedOnPhone(me)) GuardSetupCard()
+        if (st.missed > 0) {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
-                    Text("عقوبة اليوم", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
-                    Text(penalty, color = MaterialTheme.colorScheme.onErrorContainer)
-                    Text("بسبب مهام أمس اللي ما انعملت. تتصفّر بكرة.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onErrorContainer)
+                    Text("عقوبة: فاتتك ${st.missed} مهام اليوم", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
+                    Text(Penalty.describe(st, me), color = MaterialTheme.colorScheme.onErrorContainer)
+                    if (me.leader) Text("عندك تنعرض بس، بدون قطع أو قفل.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onErrorContainer)
                 }
             }
         }
@@ -237,6 +236,7 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
         when (tab) {
             "today" -> {
                 val date = today.toString()
+                val nowMin = java.time.LocalTime.now().let { it.hour * 60 + it.minute }
                 for (m in members) {
                     val mine = tasks.filter { it.memberId == m.id && it.day == Rules.dayIndex(today) }
                     val d = done.filter { it.date == date && it.memberId == m.id }
@@ -247,6 +247,12 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                                 Text("${d.size} من ${mine.size} · ${d.sumOf { it.points }} نقطة")
                             }
                             LinearProgressIndicator(progress = { if (mine.isEmpty()) 0f else d.size / mine.size.toFloat() }, modifier = Modifier.fillMaxWidth())
+                            val st = Penalty.forMember(house, m, tasks, done, today, nowMin)
+                            if (st.missed > 0) Text("فاتته ${st.missed} · ${Penalty.describe(st, m)}", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                            val stale = System.currentTimeMillis() - m.guardAt > 20 * 60_000
+                            if (house.enforce && Penalty.enforcedOnPhone(m) && (stale || !m.guardOk)) {
+                                Text("العقوبات مو مفعّلة على جواله حالياً", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                            }
                         }
                     }
                 }
@@ -291,7 +297,6 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
 
             else -> {
                 var grace by remember(house.grace) { mutableIntStateOf(house.grace) }
-                var pen by remember(house.penalties) { mutableStateOf(DEFAULT_PENALTIES + house.penalties) }
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp)) {
                         Text("كود البيت", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -301,27 +306,29 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                 }
                 Stepper("مهلة بعد آخر موعد", "$grace د", { grace = (grace - 5).coerceAtLeast(0) }, { grace = (grace + 5).coerceAtMost(180) })
                 Text("اللي يخلص قبل آخر موعد (مع المهلة) ياخذ النقاط كاملة، وبعدها تنقص 10% كل ربع ساعة لحد النص.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Button(onClick = { act { repo.saveSettings(code, grace, house.penalties); ctx.toast("انحفظ") } }, modifier = Modifier.fillMaxWidth()) { Text("حفظ المهلة") }
+
                 HorizontalDivider()
-                Text("العقوبات", fontWeight = FontWeight.Bold)
-                Text("خفيفة إذا فاتته مهمة أو أكثر، وثقيلة إذا فاته أكثر من نص مهام اليوم.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                for (age in AGE_KEYS) {
-                    Text(AGE_NAMES[age] ?: age, fontWeight = FontWeight.Medium)
-                    for ((suffix, label) in listOf("_light" to "خفيفة", "_heavy" to "ثقيلة")) {
-                        val key = age + suffix
-                        OutlinedTextField(pen[key] ?: "", { v -> pen = pen + (key to v.take(80)) }, label = { Text(label) }, modifier = Modifier.fillMaxWidth())
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("تنفيذ العقوبات على الجوالات", fontWeight = FontWeight.Bold)
+                        Text(if (house.enforce) "شغال" else "متوقف", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    Switch(
+                        checked = house.enforce,
+                        onCheckedChange = { on ->
+                            val t = java.time.LocalTime.now()
+                            act { repo.setEnforce(code, on, today.toString(), t.hour * 60 + t.minute) }
+                        },
+                    )
                 }
-                Button(onClick = { act { repo.saveSettings(code, grace, pen); ctx.toast("انحفظ") } }, modifier = Modifier.fillMaxWidth()) { Text("حفظ الإعدادات") }
-                HorizontalDivider()
-                Text("تجربة العقوبات", fontWeight = FontWeight.Bold)
                 Text(
-                    "العقوبة تنحسب من مهام أمس، والبيت الجديد ما يحسب الأيام اللي قبل إنشائه. للتجربة: خلّي أمس يوم محسوب، فتطلع عقوبة اليوم لكل واحد كأنه ما عمل مهام أمس.",
+                    "المهمة الفايتة الأولى = ساعة بدون إنترنت، الثانية = ساعتين، الثالثة = 3 ساعات، والرابعة = قفل الجوال لحد ما تنعمل كل المهام الفايتة. " +
+                        "الحساب يبدأ من لحظة التشغيل، وكل شي يتصفّر آخر اليوم. إيقافه من هنا يفك أي قطع أو قفل فوراً. " +
+                        "ما ينطبق على جوال الليدر ولا على اللي تحت 10.",
                     fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { act { repo.setStartDate(code, today.minusDays(1).toString()); ctx.toast("أمس صار محسوب") } }) { Text("احسبي أمس") }
-                    OutlinedButton(onClick = { act { repo.setStartDate(code, today.toString()); ctx.toast("رجع الحساب من اليوم") } }) { Text("ابدئي من اليوم") }
-                }
+
                 HorizontalDivider()
                 var confirmReset by remember { mutableStateOf(false) }
                 OutlinedButton(onClick = { confirmReset = true }, modifier = Modifier.fillMaxWidth()) { Text("إرجاع الجدول الأصلي") }
@@ -377,4 +384,43 @@ fun TaskDialog(initial: Task, members: List<Member>, onSave: (Task) -> Unit, onD
             }
         },
     )
+}
+
+/** يظهر للعضو لحد ما يعطي التطبيق الصلاحيات اللازمة لتنفيذ العقوبات على جواله. */
+@Composable
+fun GuardSetupCard() {
+    val ctx = LocalContext.current
+    var refresh by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) { while (true) { delay(2000); refresh++ } }
+    val vpnLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
+    ) { refresh++ }
+    val notifLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+    ) { refresh++ }
+    val vpnOk = remember(refresh) { Guard.vpnReady(ctx) }
+    val overlayOk = remember(refresh) { Guard.overlayReady(ctx) }
+    if (vpnOk && overlayOk) return
+
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("فعّل العقوبات على جوالك", fontWeight = FontWeight.Bold)
+            Text("البيت متفق إن المهام الفايتة لها عقوبة: قطع الإنترنت أو قفل الجوال. التطبيق يحتاج إذنين عشان ينفذها.", fontSize = 13.sp)
+            if (!vpnOk) Button(onClick = {
+                val i = android.net.VpnService.prepare(ctx)
+                if (i != null) vpnLauncher.launch(i) else refresh++
+            }) { Text("1. السماح بقطع الإنترنت") }
+            if (!overlayOk) Button(onClick = {
+                try {
+                    ctx.startActivity(
+                        android.content.Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:" + ctx.packageName))
+                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                } catch (e: Exception) { ctx.toast("افتح الإعدادات ← التطبيقات ← مهام البيت ← الظهور فوق التطبيقات") }
+            }) { Text("2. السماح بشاشة القفل") }
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                TextButton(onClick = { notifLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) }) { Text("السماح بالإشعارات (اختياري)") }
+            }
+        }
+    }
 }

@@ -78,6 +78,7 @@ class Repo {
                     House(
                         s.getString("name") ?: "", (s.getLong("grace") ?: 30L).toInt(), s.getString("startDate") ?: "", pen,
                         s.getString("aiKey") ?: "", s.getString("aiModel") ?: "",
+                        s.getBoolean("enforce") ?: false, s.getString("enforceDate") ?: "", (s.getLong("enforceMin") ?: 0L).toInt(),
                     ),
                 )
             }
@@ -90,6 +91,7 @@ class Repo {
             it.id, it.getString("name") ?: "", it.getString("age") ?: "adult",
             (it.getLong("character") ?: -1L).toInt(), it.getString("pinHash") ?: "",
             it.getBoolean("leader") ?: false, it.getLong("total") ?: 0L,
+            it.getLong("guardAt") ?: 0L, it.getBoolean("guardOk") ?: false,
         )
     }
 
@@ -104,14 +106,14 @@ class Repo {
     /** كل الإنجازات من تاريخ معيّن (yyyy-MM-dd) وطالع. */
     fun doneFlow(code: String, since: String): Flow<List<Done>> =
         done(code).whereGreaterThanOrEqualTo("date", since).asFlow {
-            Done(it.getString("taskId") ?: "", it.getString("memberId") ?: "", it.getString("date") ?: "", (it.getLong("points") ?: 0L).toInt())
+            Done(it.getString("taskId") ?: "", it.getString("memberId") ?: "", it.getString("date") ?: "", (it.getLong("points") ?: 0L).toInt(), (it.getLong("at") ?: -1L).toInt())
         }
 
     // ---------- كتابة ----------
 
-    suspend fun complete(code: String, t: Task, date: String, points: Int) {
+    suspend fun complete(code: String, t: Task, date: String, points: Int, nowMin: Int) {
         val b = db.batch()
-        b.set(done(code).document("${date}_${t.id}"), mapOf("taskId" to t.id, "memberId" to t.memberId, "date" to date, "points" to points))
+        b.set(done(code).document("${date}_${t.id}"), mapOf("taskId" to t.id, "memberId" to t.memberId, "date" to date, "points" to points, "at" to nowMin))
         b.update(members(code).document(t.memberId), "total", FieldValue.increment(points.toLong()))
         b.commit().await()
     }
@@ -148,6 +150,16 @@ class Repo {
 
     suspend fun setStartDate(code: String, date: String) {
         house(code).update("startDate", date).await()
+    }
+
+    /** تشغيل أو إيقاف تنفيذ العقوبات. وقت التشغيل ينحفظ عشان ما نحاسب على اللي قبله. */
+    suspend fun setEnforce(code: String, on: Boolean, date: String, nowMin: Int) {
+        house(code).update(mapOf("enforce" to on, "enforceDate" to date, "enforceMin" to nowMin)).await()
+    }
+
+    /** نبضة من خدمة الحراسة على جوال العضو: آخر وقت كانت شغالة وهل صلاحياتها كاملة. */
+    suspend fun beat(code: String, memberId: String, ok: Boolean) {
+        members(code).document(memberId).update(mapOf("guardAt" to System.currentTimeMillis(), "guardOk" to ok)).await()
     }
 
     suspend fun saveAi(code: String, key: String, model: String) {
