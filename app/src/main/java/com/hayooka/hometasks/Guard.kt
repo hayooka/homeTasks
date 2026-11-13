@@ -121,6 +121,8 @@ class EnforcerService : Service() {
     private var doneJob: Job? = null
     private var doneDate = ""
     private var lastBeat = 0L
+    /** المهام اللي انرسل تذكيرها اليوم، عشان ما يتكرر. */
+    private val reminded = HashSet<String>()
 
     override fun onBind(intent: Intent?): IBinder? = null
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
@@ -148,6 +150,7 @@ class EnforcerService : Service() {
     private fun foreground() {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.createNotificationChannel(NotificationChannel("guard", "متابعة المهام", NotificationManager.IMPORTANCE_LOW))
+        nm.createNotificationChannel(NotificationChannel("remind", "تذكير المهام", NotificationManager.IMPORTANCE_HIGH))
         val n: Notification = Notification.Builder(this, "guard")
             .setContentTitle("مهام البيت")
             .setContentText("متابعة المهام شغالة")
@@ -179,6 +182,7 @@ class EnforcerService : Service() {
         val st = if (h != null && m != null && t != null && d != null && Penalty.enforcedOnPhone(m)) {
             Penalty.forMember(h, m, t, d, date, now.hour * 60 + now.minute)
         } else PenaltyState.NONE
+        if (h != null && m != null && t != null && d != null) remind(h, m, t, d, date, now.hour * 60 + now.minute)
 
         if (st.block && Guard.vpnReady(this)) BlockVpnService.start(this) else if (BlockVpnService.running) BlockVpnService.stop(this)
 
@@ -196,6 +200,27 @@ class EnforcerService : Service() {
             lastBeat = ms
             val ok = Guard.vpnReady(this) && Guard.overlayReady(this) && Guard.adminReady(this)
             scope.launch { try { repo.beat(code, meId, ok) } catch (e: Exception) { } }
+        }
+    }
+
+    /** إشعار قبل 10 دقايق من الوقت اللي تبدأ فيه نقاط المهمة تنقص (آخر موعد + المهلة). مرة وحدة لكل مهمة باليوم. */
+    private fun remind(h: House, m: Member, tasks: List<Task>, done: List<Done>, date: LocalDate, nowMin: Int) {
+        val doneIds = done.filter { it.date == doneDate && it.memberId == m.id }.map { it.taskId }.toSet()
+        for (task in tasks) {
+            if (task.memberId != m.id || task.day != Rules.dayIndex(date) || task.allDay || task.id in doneIds) continue
+            val limit = task.start + task.dur + h.grace
+            if (nowMin < limit - 10 || nowMin >= limit || !reminded.add(doneDate + task.id)) continue
+            val open = android.app.PendingIntent.getActivity(
+                this, 0, Intent(this, MainActivity::class.java), android.app.PendingIntent.FLAG_IMMUTABLE,
+            )
+            val n = Notification.Builder(this, "remind")
+                .setContentTitle(task.title)
+                .setContentText("باقي ${limit - nowMin} دقايق وتبدأ نقاطها تنقص (${task.points} نقطة)")
+                .setSmallIcon(android.R.drawable.ic_popup_reminder)
+                .setContentIntent(open)
+                .setAutoCancel(true)
+                .build()
+            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(task.id.hashCode(), n)
         }
     }
 

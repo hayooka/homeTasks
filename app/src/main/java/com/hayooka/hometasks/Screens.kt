@@ -692,7 +692,7 @@ fun GuardSetupCard() {
                 } catch (e: Exception) { ctx.toast("ما قدرنا نفتح صفحة الإذن") }
             }) { Text("3. حماية التطبيق من الحذف") }
             if (android.os.Build.VERSION.SDK_INT >= 33) {
-                TextButton(onClick = { notifLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) }) { Text("السماح بالإشعارات (اختياري)") }
+                OutlinedButton(onClick = { notifLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) }) { Text("السماح بإشعارات التذكير") }
             }
         }
     }
