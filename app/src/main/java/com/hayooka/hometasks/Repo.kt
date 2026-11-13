@@ -136,8 +136,18 @@ class Repo {
     /** كل الإنجازات من تاريخ معيّن (yyyy-MM-dd) وطالع. */
     fun doneFlow(code: String, since: String): Flow<List<Done>> =
         done(code).whereGreaterThanOrEqualTo("date", since).asFlow {
-            Done(it.getString("taskId") ?: "", it.getString("memberId") ?: "", it.getString("date") ?: "", it.getDouble("points") ?: 0.0, (it.getLong("at") ?: -1L).toInt(), it.getBoolean("ok") ?: true)
+            Done(it.getString("taskId") ?: "", it.getString("memberId") ?: "", it.getString("date") ?: "", it.getDouble("points") ?: 0.0, (it.getLong("at") ?: -1L).toInt(), it.getBoolean("ok") ?: true,
+                it.getString("title") ?: "",
+            )
         }
+
+    /** كل سجل الإنجاز من أول يوم، للتصدير. */
+    suspend fun allDone(code: String): List<Done> = done(code).get().await().documents.map {
+        Done(
+            it.getString("taskId") ?: "", it.getString("memberId") ?: "", it.getString("date") ?: "",
+            it.getDouble("points") ?: 0.0, (it.getLong("at") ?: -1L).toInt(), it.getBoolean("ok") ?: true, it.getString("title") ?: "",
+        )
+    }
 
     // ---------- كتابة ----------
 
@@ -146,7 +156,7 @@ class Repo {
         val b = db.batch()
         b.set(
             done(code).document("${date}_${t.id}"),
-            mapOf("taskId" to t.id, "memberId" to t.memberId, "date" to date, "points" to points, "at" to at, "ok" to ok),
+            mapOf("taskId" to t.id, "memberId" to t.memberId, "date" to date, "points" to points, "at" to at, "ok" to ok, "title" to t.title),
         )
         if (ok) b.update(members(code).document(t.memberId), "total", FieldValue.increment(points))
         b.commit().await()
@@ -182,7 +192,7 @@ class Repo {
         b.update(members(code).document(m.id), mapOf("streak" to streak, "streakDate" to date, "total" to FieldValue.increment(bonus)))
         b.set(
             done(code).document("${date}_streak_${m.id}"),
-            mapOf("taskId" to "streak", "memberId" to m.id, "date" to date, "points" to bonus, "at" to -1, "ok" to true),
+            mapOf("taskId" to "streak", "memberId" to m.id, "date" to date, "points" to bonus, "at" to -1, "ok" to true, "title" to "مكافأة يوم كامل"),
         )
         b.commit().await()
     }

@@ -672,6 +672,33 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                 )
 
                 HorizontalDivider()
+                // تنزيل السجل كامل: يُجهّز النص ثم يُفتح اختيار مكان الحفظ
+                var exportText by remember { mutableStateOf("") }
+                fun write(uri: android.net.Uri?) {
+                    if (uri == null) return
+                    try {
+                        ctx.contentResolver.openOutputStream(uri)?.use { it.write(exportText.toByteArray(Charsets.UTF_8)) }
+                        ctx.toast("انحفظ الملف")
+                    } catch (e: Exception) { ctx.toast("ما قدرنا نحفظ الملف") }
+                }
+                val saveCsv = androidx.activity.compose.rememberLauncherForActivityResult(
+                    androidx.activity.result.contract.ActivityResultContracts.CreateDocument("text/csv"),
+                ) { uri -> write(uri) }
+                val saveJson = androidx.activity.compose.rememberLauncherForActivityResult(
+                    androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/json"),
+                ) { uri -> write(uri) }
+                Text("تنزيل السجل", fontWeight = FontWeight.Bold)
+                Text("كل اللي تأشّر من أول يوم: التاريخ، العضو، المهمة، وقت التأشير، النقاط، والحالة.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = {
+                        act { exportText = Export.csv(repo.allDone(code), members, tasks); saveCsv.launch("homeTasks-log-$today.csv") }
+                    }) { Text("ملف Excel (CSV)") }
+                    OutlinedButton(onClick = {
+                        act { exportText = Export.json(repo.allDone(code), members, tasks); saveJson.launch("homeTasks-log-$today.json") }
+                    }) { Text("ملف JSON") }
+                }
+
+                HorizontalDivider()
                 var secret by remember { mutableStateOf("") }
                 Text("كلمة سر الحذف والخروج", fontWeight = FontWeight.Bold)
                 Text(

@@ -26,7 +26,11 @@ data class Task(
 
 /** at: الدقيقة من اليوم اللي تأشّرت فيها المهمة، و-1 إذا مو معروفة. */
 /** ok: محسوبة. المهمة المتأخرة تبقى ok = false لحد ما القائد يوافق عليها. taskId = "streak" لمكافأة السلسلة. */
-data class Done(val taskId: String, val memberId: String, val date: String, val points: Double, val at: Int, val ok: Boolean)
+data class Done(
+    val taskId: String, val memberId: String, val date: String, val points: Double, val at: Int, val ok: Boolean,
+    /** اسم المهمة وقت التأشير، عشان السجل يبقى صحيح حتى لو تغيرت أو انحذفت. */
+    val title: String = "",
+)
 
 data class House(
     val name: String, val grace: Int, val startDate: String, val penalties: Map<String, String>,
