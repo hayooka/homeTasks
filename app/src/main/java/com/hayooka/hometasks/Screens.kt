@@ -83,7 +83,16 @@ fun Home(repo: Repo, code: String, meId: String, onLogout: () -> Unit) {
         }
     }
 
-    LaunchedEffect(Unit) { Guard.start(ctx) }
+    // إذن الإشعارات ينطلب من الكل مرة أول ما يفتحون، عشان توصلهم تذكيرات المهام
+    val askNotif = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+    ) { }
+    LaunchedEffect(Unit) {
+        Guard.start(ctx)
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            try { askNotif.launch(android.Manifest.permission.POST_NOTIFICATIONS) } catch (e: Exception) { }
+        }
+    }
     LaunchedEffect(house.seedVersion, me.leader) {
         if (me.leader && house.seedVersion < SEED_VERSION) try { repo.migrateSeed(code, house.seedVersion) } catch (e: Exception) { }
     }
