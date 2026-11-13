@@ -204,9 +204,20 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
         scope.launch { try { block() } catch (e: Exception) { ctx.toast("ما انحفظ، تأكدي من الإنترنت") } }
     }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Chips(listOf("today" to "اليوم", "tasks" to "المهام", "members" to "الأعضاء", "settings" to "الإعدادات"), tab) { tab = it }
-
+    Column(Modifier.fillMaxSize()) {
+        Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Chips(listOf("today" to "اليوم", "tasks" to "المهام", "members" to "الأعضاء", "settings" to "الإعدادات"), tab) { tab = it }
+        }
+        if (tab == "tasks") {
+            TimelineEditor(
+                members, tasks, today,
+                onSave = { t -> act { repo.saveTask(code, t) } },
+                onDelete = { id -> act { repo.deleteTask(code, id) } },
+            )
+        } else Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
         when (tab) {
             "today" -> {
                 val date = today.toString()
@@ -222,34 +233,6 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                             LinearProgressIndicator(progress = { if (mine.isEmpty()) 0f else d.size / mine.size.toFloat() }, modifier = Modifier.fillMaxWidth())
                         }
                     }
-                }
-            }
-
-            "tasks" -> {
-                var day by remember { mutableIntStateOf(Rules.dayIndex(today)) }
-                var editing by remember { mutableStateOf<Task?>(null) }
-                Chips(DAY_NAMES.mapIndexed { i, n -> i.toString() to n }, day.toString()) { day = it.toInt() }
-                Button(onClick = { editing = Task("", "", members.first().id, day, 16 * 60, 15, 5) }, modifier = Modifier.fillMaxWidth()) { Text("مهمة جديدة") }
-                val names = members.associate { it.id to it.name }
-                for (t in tasks.filter { it.day == day }.sortedBy { it.start }) {
-                    Card(Modifier.fillMaxWidth().clickable { editing = t }) {
-                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(t.title, fontWeight = FontWeight.Medium)
-                                Text("${names[t.memberId] ?: "بدون شخص"} · ${Rules.fmt(t.start)} · ${t.dur} د", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Text("${t.points}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-                }
-                val e = editing
-                if (e != null) {
-                    TaskDialog(
-                        e, members,
-                        onSave = { t -> editing = null; act { repo.saveTask(code, t) } },
-                        onDelete = if (e.id.isEmpty()) null else ({ editing = null; act { repo.deleteTask(code, e.id) } }),
-                        onDismiss = { editing = null },
-                    )
                 }
             }
 
@@ -313,7 +296,20 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                     }
                 }
                 Button(onClick = { act { repo.saveSettings(code, grace, pen); ctx.toast("انحفظ") } }, modifier = Modifier.fillMaxWidth()) { Text("حفظ الإعدادات") }
+                HorizontalDivider()
+                var confirmReset by remember { mutableStateOf(false) }
+                OutlinedButton(onClick = { confirmReset = true }, modifier = Modifier.fillMaxWidth()) { Text("إرجاع الجدول الأصلي") }
+                if (confirmReset) {
+                    AlertDialog(
+                        onDismissRequest = { confirmReset = false },
+                        title = { Text("إرجاع الجدول الأصلي؟") },
+                        text = { Text("تنمسح كل المهام الحالية وتعديلاتك عليها، ويرجع جدول الأسبوع الأساسي. النقاط المجموعة تبقى، بس اللي تأشّر اليوم يرجع غير مؤشّر.") },
+                        confirmButton = { TextButton(onClick = { confirmReset = false; act { repo.resetTasks(code); ctx.toast("رجع الجدول الأصلي") } }) { Text("إرجاع") } },
+                        dismissButton = { TextButton(onClick = { confirmReset = false }) { Text("إلغاء") } },
+                    )
+                }
             }
+        }
         }
     }
 }

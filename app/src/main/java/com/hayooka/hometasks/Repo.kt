@@ -139,6 +139,15 @@ class Repo {
         tasks(code).document(id).delete().await()
     }
 
+    /** يمسح كل المهام ويرجّع الجدول الأصلي من Seed. */
+    suspend fun resetTasks(code: String) {
+        val old = tasks(code).get().await().documents
+        val b = db.batch()
+        for (d in old) b.delete(d.reference)
+        for (t in Seed.tasks()) b.set(tasks(code).document(), taskMap(t))
+        b.commit().await()
+    }
+
     suspend fun addMember(code: String, name: String, age: String) {
         members(code).document().set(
             mapOf("name" to name, "age" to age, "character" to -1, "leader" to false, "total" to 0L, "pinHash" to ""),
