@@ -28,6 +28,8 @@ object Personal {
         Suggestion("الدراسة", 15, 0, ALL_DAY),
         Suggestion("الفرنسي", 15, 0, ALL_DAY),
         Suggestion("حفظ القرآن", 15, 0, ALL_DAY),
+        Suggestion("القراءة", 10, 0, ALL_DAY),
+        Suggestion("مشروع ممتع", 15, 0, ALL_DAY),
         Suggestion("صلاة الفجر", 10, 4 * 60 + 50, 85),
         Suggestion("صلاة الظهر", 10, 11 * 60 + 35, 175),
         Suggestion("صلاة العصر", 10, 14 * 60 + 35, 135),

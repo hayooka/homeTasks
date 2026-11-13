@@ -167,19 +167,15 @@ fun TodayPage(
         if (chores.isEmpty()) Text("ما عليك مهام بيت اليوم.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         for (t in chores) TaskRow(t, doneToday[t.id], nowMin, house.grace, onToggle, null)
 
-        if (me.age != "u10") {
-            HorizontalDivider()
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("مهامي الشخصية", fontWeight = FontWeight.Bold)
-                    Text("أنت تضيفها وتعدلها. بدون عقوبة، والنقاط بعد موافقة الليدر.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                OutlinedButton(onClick = { adding = true }) { Text("إضافة") }
+        HorizontalDivider()
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("مهامي الشخصية", fontWeight = FontWeight.Bold)
+                Text("أنت تضيفها وتعدلها. بدون عقوبة، والنقاط بعد موافقة الليدر.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            for (t in personal) TaskRow(t, doneToday[t.id], nowMin, house.grace, onToggle) { editing = t }
-        } else {
-            for (t in personal) TaskRow(t, doneToday[t.id], nowMin, house.grace, onToggle, null)
+            OutlinedButton(onClick = { adding = true }) { Text("إضافة") }
         }
+        for (t in personal) TaskRow(t, doneToday[t.id], nowMin, house.grace, onToggle) { editing = t }
     }
 
     val e = editing
@@ -349,6 +345,9 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                 val date = today.toString()
                 val nowMin = java.time.LocalTime.now().let { it.hour * 60 + it.minute }
                 var open by remember { mutableStateOf("") }
+                // إضافة أو تعديل مهمة شخصية عن عضو (مثل عمرو اللي ما معه جوال)
+                var personalFor by remember { mutableStateOf<Member?>(null) }
+                var personalEdit by remember { mutableStateOf<Pair<Member, Task>?>(null) }
                 val names = members.associate { it.id to it.name }
                 val titles = tasks.associate { it.id to it.title }
                 val muted = MaterialTheme.colorScheme.onSurfaceVariant
@@ -437,12 +436,37 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                                                 fontSize = 12.sp, color = muted,
                                             )
                                         }
+                                        if (t.personal) TextButton(onClick = { personalEdit = m to t }) { Text("تعديل", fontSize = 12.sp) }
                                         Text("${t.points}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                                     }
                                 }
+                                TextButton(onClick = { personalFor = m }) { Text("إضافة مهمة شخصية لـ ${m.name}") }
                             }
                         }
                     }
+                }
+
+                val target = personalFor ?: personalEdit?.first
+                if (target != null) {
+                    PersonalDialog(
+                        existing = personalEdit?.second,
+                        taken = tasks.filter { it.memberId == target.id && it.personal }.map { it.title }.toSet(),
+                        onAdd = { title, days, start, dur ->
+                            personalFor = null
+                            act {
+                                // إضافة الليدر موافق عليها مباشرة؛ النقاط من الاقتراح الجاهز أو من تقدير المساعد
+                                val sug = Personal.suggestions.firstOrNull { it.title == title }
+                                val key = house.aiKey.ifBlank { BuildConfig.GEMINI_KEY }
+                                val points = sug?.points ?: if (key.isBlank()) 5 else try {
+                                    Ai.estimate(key, house.aiModel.ifBlank { DEFAULT_AI_MODEL }, title, Personal.MAX_TASK)
+                                } catch (x: Exception) { 5 }
+                                repo.addTasks(code, days.map { d -> Task("", title, target.id, d, start, dur, points, personal = true, approved = true) })
+                            }
+                        },
+                        onUpdate = { old, title, start, dur -> personalEdit = null; act { repo.updatePersonal(code, target.id, old.title, title, start, dur) } },
+                        onDelete = { old -> personalEdit = null; act { repo.deletePersonal(code, target.id, old.title) } },
+                        onDismiss = { personalFor = null; personalEdit = null },
+                    )
                 }
             }
 
