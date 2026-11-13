@@ -43,9 +43,9 @@ fun Home(repo: Repo, code: String, meId: String, onLogout: () -> Unit) {
 
     val today = now.toLocalDate()
     val weekStart = Rules.weekStart(today)
-    // نحمّل من أول الشهر (لترتيب الشهر) أو من قبل بداية الأسبوع بيوم، الأقدم منهم
+    // نحمّل من أول الشهر اللي فات: لترتيب الشهر، لتصفح الأيام السابقة، ولإحصائيات المساعد
     val monthStart = today.withDayOfMonth(1)
-    val since = (if (monthStart < weekStart.minusDays(1)) monthStart else weekStart.minusDays(1)).toString()
+    val since = monthStart.minusMonths(1).toString()
     val done by remember(code, since) { repo.doneFlow(code, since) }.collectAsState(initial = emptyList())
 
     val house = houseState
@@ -125,8 +125,13 @@ fun TodayPage(
     var adding by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Task?>(null) }
     val date = today.toString()
-    val mine = tasks.filter { it.memberId == me.id && it.day == Rules.dayIndex(today) }.sortedBy { it.start }
-    val doneToday = done.filter { it.date == date }.associateBy { it.taskId }
+    // تصفح الأيام السابقة: back = كم يوم لورا. الأيام السابقة للعرض بس
+    var back by remember { mutableIntStateOf(0) }
+    val maxBack = java.time.temporal.ChronoUnit.DAYS.between(today.withDayOfMonth(1).minusMonths(1), today).toInt()
+    val viewDay = today.minusDays(back.toLong())
+    val past = back > 0
+    val mine = tasks.filter { it.memberId == me.id && it.day == Rules.dayIndex(viewDay) }.sortedBy { it.start }
+    val doneToday = done.filter { it.date == viewDay.toString() }.associateBy { it.taskId }
     val earned = mine.sumOf { t -> doneToday[t.id]?.takeIf { it.ok }?.points ?: 0.0 }
     val streak = Rules.streakNow(me, today)
     val possible = mine.sumOf { it.points }
@@ -165,13 +170,23 @@ fun TodayPage(
             )
         }
         Text(
-            if (allDone) "${DAY_NAMES[Rules.dayIndex(today)]} · خلصت كل مهامك! ${Rules.pts(earned)} نقطة"
+            if (past) "${DAY_NAMES[Rules.dayIndex(viewDay)]} $viewDay · ${Rules.pts(earned)} من $possible نقطة"
+            else if (allDone) "${DAY_NAMES[Rules.dayIndex(today)]} · خلصت كل مهامك! ${Rules.pts(earned)} نقطة"
             else "${DAY_NAMES[Rules.dayIndex(today)]} · نقاط اليوم ${Rules.pts(earned)} من $possible",
             fontSize = 18.sp, fontWeight = FontWeight.Bold,
         )
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(enabled = back < maxBack, onClick = { back++ }) { Text("اليوم اللي قبل") }
+            Spacer(Modifier.weight(1f))
+            if (past) {
+                OutlinedButton(onClick = { back-- }) { Text("اليوم اللي بعد") }
+                Button(onClick = { back = 0 }) { Text("اليوم") }
+            }
+        }
+        if (past) Text("هذا عرض ليوم سابق، للمتابعة بس.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-        if (house.enforce && Penalty.enforcedOnPhone(me)) GuardSetupCard()
-        if (st.missed > 0) {
+        if (!past && house.enforce && Penalty.enforcedOnPhone(me)) GuardSetupCard()
+        if (!past && st.missed > 0) {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
                     Text("عقوبة: فاتتك ${st.missed} مهام اليوم", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
@@ -184,7 +199,7 @@ fun TodayPage(
         val chores = mine.filter { !it.personal }
         val personal = mine.filter { it.personal }
         if (chores.isEmpty()) Text("ما عليك مهام بيت اليوم.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        for (t in chores) TaskRow(t, doneToday[t.id], nowMin, house.grace, onToggle, null)
+        for (t in chores) TaskRow(t, doneToday[t.id], nowMin, house.grace, onToggle, null, past)
 
         HorizontalDivider()
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -192,9 +207,9 @@ fun TodayPage(
                 Text("مهامي الشخصية", fontWeight = FontWeight.Bold)
                 Text("أنت تضيفها وتعدلها. بدون عقوبة، والنقاط بعد موافقة القائد.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            OutlinedButton(onClick = { adding = true }) { Text("إضافة") }
+            if (!past) OutlinedButton(onClick = { adding = true }) { Text("إضافة") }
         }
-        for (t in personal) TaskRow(t, doneToday[t.id], nowMin, house.grace, onToggle) { editing = t }
+        for (t in personal) TaskRow(t, doneToday[t.id], nowMin, house.grace, onToggle, if (past) null else ({ editing = t }), past)
     }
 
     val e = editing
@@ -235,17 +250,17 @@ fun TodayPage(
 
 /** صف مهمة في صفحة "مهامي". onEdit موجود بس للمهام الشخصية. */
 @Composable
-private fun TaskRow(t: Task, d: Done?, nowMin: Int, grace: Int, onToggle: (Task, Done?) -> Unit, onEdit: (() -> Unit)?) {
-    val late = d == null && !t.allDay && Rules.isLate(t, nowMin, grace)
-    val current = !t.allDay && nowMin >= t.start && nowMin <= t.start + t.dur
+private fun TaskRow(t: Task, d: Done?, nowMin: Int, grace: Int, onToggle: (Task, Done?) -> Unit, onEdit: (() -> Unit)?, past: Boolean = false) {
+    val late = d == null && (past || (!t.allDay && Rules.isLate(t, nowMin, grace)))
+    val current = !past && !t.allDay && nowMin >= t.start && nowMin <= t.start + t.dur
     Card(
-        Modifier.fillMaxWidth().clickable { onToggle(t, d) },
+        Modifier.fillMaxWidth().clickable(enabled = !past) { onToggle(t, d) },
         colors = CardDefaults.cardColors(
             containerColor = if (current && d == null) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
         ),
     ) {
         Row(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(checked = d != null, onCheckedChange = { onToggle(t, d) })
+            Checkbox(checked = d != null, enabled = !past, onCheckedChange = { onToggle(t, d) })
             Column(Modifier.weight(1f)) {
                 Text(t.title, fontWeight = FontWeight.Medium, textDecoration = if (d != null) TextDecoration.LineThrough else null)
                 Text(
@@ -257,6 +272,7 @@ private fun TaskRow(t: Task, d: Done?, nowMin: Int, grace: Int, onToggle: (Task,
             val label = when {
                 d != null && !d.ok -> "بانتظار موافقة القائد"
                 d != null -> "تم +${Rules.pts(d.points)}"
+                past -> "ما انعملت"
                 t.personal && !t.approved -> "مقترح ${t.points} · ينتظر القائد"
                 late -> "متأخر · ${Rules.pointsNow(t, nowMin, grace)} من ${t.points}"
                 else -> "${t.points} نقطة"

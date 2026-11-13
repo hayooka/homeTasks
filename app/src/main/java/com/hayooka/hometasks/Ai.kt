@@ -59,6 +59,20 @@ object Ai {
             }
             sb.append("\n")
         }
+        // ملخص شهري: هذا الشهر واللي قبله. محسوب من سجل الإنجاز الفعلي
+        val thisMonth = today.withDayOfMonth(1)
+        val lastMonth = thisMonth.minusMonths(1)
+        for ((label, from, to) in listOf(Triple("هذا الشهر", thisMonth, today.plusDays(1)), Triple("الشهر اللي فات", lastMonth, thisMonth))) {
+            sb.append("ملخص $label (${from} إلى ${to.minusDays(1)}):\n")
+            for (m in members) {
+                val mine = done.filter { it.ok && it.memberId == m.id && it.date >= from.toString() && it.date < to.toString() }
+                val finished = mine.count { it.taskId != "streak" }
+                val fullDays = mine.count { it.taskId == "streak" }
+                val activeDays = mine.filter { it.taskId != "streak" }.map { it.date }.distinct().size
+                sb.append("- ${m.name}: ${Rules.pts(mine.sumOf { it.points })} نقطة، $finished مهمة منجزة على $activeDays يوم، وأيام كاملة بوقتها: $fullDays.\n")
+            }
+        }
+        sb.append("ملاحظة: الملخص الشهري فيه المنجز والنقاط بس. عدد المهام الفايتة متوفر لهذا الأسبوع فقط.\n")
         return sb.toString()
     }
 
@@ -85,7 +99,7 @@ $list
 - في edit: n هو رقم المهمة من القائمة، واكتب بس الحقول اللي تتغير. إذا التعديل يخص مهمة متكررة بعدة أيام، اكتب عنصر لكل سطر منها.
 - في delete: أرقام المهام من القائمة.
 - نقاط المهام الجديدة حسب التعب: خفيفة 5، متوسطة 10 إلى 15، ثقيلة 20 إلى 30، إلا إذا حددها القائد.
-- للأسئلة عن اللي صار: جاوب من الإحصائيات بالأرقام، وخلي القوائم فاضية.
+- للأسئلة عن اللي صار: جاوب من الإحصائيات بالأرقام، وخلي القوائم فاضية. إذا السؤال عن فترة أو تفصيل ما عندك أرقامه، قول إنه مو متوفر ولا تخمّن.
 - لطلب توزيع أعدل: قارن حمل كل واحد (عدد المهام ومجموع النقاط) مع مراعاة إن فرح هي القائد وعمرو صغير، واقترح نقل مهام محددة عن طريق edit بتغيير member، واشرح السبب باختصار في reply.
 - لا تغيّر شي ما انطلب، وما في شي يتنفذ إلا بعد موافقة القائد على اقتراحك.
 - إذا ناقص شي ضروري اسأل عنه في reply وخلي القوائم فاضية.
