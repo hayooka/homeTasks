@@ -15,7 +15,12 @@ data class Member(
 data class Task(
     val id: String, val title: String, val memberId: String,
     val day: Int, val start: Int, val dur: Int, val points: Int,
-)
+    /** personal: مهمة شخصية أضافها صاحبها. approved: الليدر وافقت على نقاطها. */
+    val personal: Boolean = false, val approved: Boolean = true,
+) {
+    /** بدون موعد: متاحة طول اليوم وما تتأخر. */
+    val allDay get() = start == 0 && dur >= 24 * 60
+}
 
 /** at: الدقيقة من اليوم اللي تأشّرت فيها المهمة، و-1 إذا مو معروفة. */
 /** ok: محسوبة. المهمة المتأخرة تبقى ok = false لحد ما الليدر توافق عليها. taskId = "streak" لمكافأة السلسلة. */
@@ -70,7 +75,7 @@ object Rules {
 
     /** هل كل مهام اليوم انعملت بوقتها؟ justDone هي المهمة اللي تأشّرت للتو. */
     fun allOnTime(mine: List<Task>, doneToday: List<Done>, justDone: String, grace: Int): Boolean =
-        mine.isNotEmpty() && mine.all { t ->
+        mine.isNotEmpty() && mine.filter { !it.personal || it.approved }.all { t ->
             t.id == justDone || doneToday.any { d -> d.taskId == t.id && d.ok && (d.at < 0 || d.at <= t.start + t.dur + grace) }
         }
 

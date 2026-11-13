@@ -46,7 +46,7 @@ object Penalty {
         // يوم التفعيل: ما نحاسب على مواعيد عدّت قبل لحظة التفعيل
         val floor = if (d == house.enforceDate) house.enforceMin else -1
         val mineDone = done.filter { it.date == d && it.memberId == m.id }.associateBy { it.taskId }
-        val missed = tasks.filter { it.memberId == m.id && it.day == Rules.dayIndex(date) }
+        val missed = tasks.filter { it.memberId == m.id && it.day == Rules.dayIndex(date) && !it.personal }
             .map { it to (it.start + it.dur + house.grace) }
             .filter { (t, deadline) ->
                 val dn = mineDone[t.id]

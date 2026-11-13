@@ -102,6 +102,7 @@ class Repo {
             it.id, it.getString("title") ?: "", it.getString("memberId") ?: "",
             (it.getLong("day") ?: 0L).toInt(), (it.getLong("start") ?: 0L).toInt(),
             (it.getLong("dur") ?: 15L).toInt(), (it.getLong("points") ?: 5L).toInt(),
+            it.getBoolean("personal") ?: false, it.getBoolean("approved") ?: true,
         )
     }
 
@@ -189,6 +190,7 @@ class Repo {
 
     private fun taskMap(t: Task) = mapOf(
         "title" to t.title, "memberId" to t.memberId, "day" to t.day, "start" to t.start, "dur" to t.dur, "points" to t.points,
+        "personal" to t.personal, "approved" to t.approved,
     )
 
     suspend fun saveTask(code: String, t: Task) {
@@ -218,6 +220,41 @@ class Repo {
 
     suspend fun saveAi(code: String, key: String, model: String) {
         house(code).update(mapOf("aiKey" to key, "aiModel" to model)).await()
+    }
+
+    // ---------- المهام الشخصية ----------
+
+    private suspend fun personalDocs(code: String, memberId: String, title: String) =
+        tasks(code).whereEqualTo("memberId", memberId).get().await().documents
+            .filter { it.getString("title") == title && it.getBoolean("personal") == true }
+
+    /** تعديل صاحب المهمة لاسمها أو موعدها، على كل أيامها. */
+    suspend fun updatePersonal(code: String, memberId: String, oldTitle: String, newTitle: String, start: Int, dur: Int) {
+        val docs = personalDocs(code, memberId, oldTitle)
+        if (docs.isEmpty()) return
+        val b = db.batch()
+        for (d in docs) b.update(d.reference, mapOf("title" to newTitle, "start" to start, "dur" to dur))
+        b.commit().await()
+    }
+
+    suspend fun deletePersonal(code: String, memberId: String, title: String) {
+        val docs = personalDocs(code, memberId, title)
+        if (docs.isEmpty()) return
+        val b = db.batch()
+        for (d in docs) b.delete(d.reference)
+        b.commit().await()
+    }
+
+    /** موافقة الليدر على نقاط مهمة شخصية. إذا صاحبها أشّر عليها اليوم وهي تنتظر، تنحسب له بالنقاط الموافق عليها. */
+    suspend fun approvePersonal(code: String, memberId: String, title: String, points: Int, pending: Done?) {
+        val docs = personalDocs(code, memberId, title)
+        val b = db.batch()
+        for (d in docs) b.update(d.reference, mapOf("approved" to true, "points" to points))
+        if (pending != null) {
+            b.update(done(code).document("${pending.date}_${pending.taskId}"), mapOf("ok" to true, "points" to points.toDouble()))
+            b.update(members(code).document(memberId), "total", FieldValue.increment(points.toDouble()))
+        }
+        b.commit().await()
     }
 
     suspend fun deleteTask(code: String, id: String) {

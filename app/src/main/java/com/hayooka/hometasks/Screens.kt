@@ -63,7 +63,15 @@ fun Home(repo: Repo, code: String, meId: String, onLogout: () -> Unit) {
                 else {
                     // المتأخرة تنتظر موافقة الليدر (إلا مهام الليدر نفسها)
                     val late = Rules.isLate(t, nowMin, house.grace)
-                    repo.complete(code, t, date, Rules.pointsNow(t, nowMin, house.grace).toDouble(), nowMin, !late || me.leader)
+                    var pts = Rules.pointsNow(t, nowMin, house.grace).toDouble()
+                    if (t.personal) {
+                        // سقف يومي لنقاط المهام الشخصية
+                        val ids = tasks.filter { it.personal }.map { it.id }.toSet()
+                        val got = done.filter { it.date == date && it.memberId == me.id && it.ok && it.taskId in ids }.sumOf { it.points }
+                        pts = minOf(pts, (Personal.MAX_DAY - got).coerceAtLeast(0.0))
+                    }
+                    // المتأخرة والشخصية اللي لسا ما انوافق على نقاطها تنتظر الليدر
+                    repo.complete(code, t, date, pts, nowMin, (!late || me.leader) && (!t.personal || t.approved))
                     if (!late) {
                         val mine = tasks.filter { it.memberId == me.id && it.day == Rules.dayIndex(today) }
                         if (Rules.allOnTime(mine, done.filter { it.date == date }, t.id, house.grace)) repo.awardStreak(code, me, today)
@@ -88,7 +96,7 @@ fun Home(repo: Repo, code: String, meId: String, onLogout: () -> Unit) {
         }
         HorizontalPager(state = pager, modifier = Modifier.weight(1f)) { page ->
             when (page) {
-                0 -> TodayPage(me, house, tasks, done, today, nowMin, toggle)
+                0 -> TodayPage(repo, code, me, house, tasks, done, today, nowMin, toggle)
                 1 -> RankPage(members, done, weekStart.toString(), meId, house, tasks, today, nowMin, onLogout)
                 else -> ManagePage(repo, code, house, members, tasks, done, today)
             }
@@ -99,7 +107,14 @@ fun Home(repo: Repo, code: String, meId: String, onLogout: () -> Unit) {
 // ---------------- مهامي ----------------
 
 @Composable
-fun TodayPage(me: Member, house: House, tasks: List<Task>, done: List<Done>, today: LocalDate, nowMin: Int, onToggle: (Task, Done?) -> Unit) {
+fun TodayPage(
+    repo: Repo, code: String, me: Member, house: House, tasks: List<Task>, done: List<Done>,
+    today: LocalDate, nowMin: Int, onToggle: (Task, Done?) -> Unit,
+) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var adding by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<Task?>(null) }
     val date = today.toString()
     val mine = tasks.filter { it.memberId == me.id && it.day == Rules.dayIndex(today) }.sortedBy { it.start }
     val doneToday = done.filter { it.date == date }.associateBy { it.taskId }
@@ -147,38 +162,94 @@ fun TodayPage(me: Member, house: House, tasks: List<Task>, done: List<Done>, tod
             }
         }
 
-        if (mine.isEmpty()) Text("ما عليك مهام اليوم.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        for (t in mine) {
-            val d = doneToday[t.id]
-            val late = d == null && Rules.isLate(t, nowMin, house.grace)
-            val current = nowMin >= t.start && nowMin <= t.start + t.dur
-            Card(
-                Modifier.fillMaxWidth().clickable { onToggle(t, d) },
-                colors = CardDefaults.cardColors(
-                    containerColor = if (current && d == null) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                ),
-            ) {
-                Row(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = d != null, onCheckedChange = { onToggle(t, d) })
-                    Column(Modifier.weight(1f)) {
-                        Text(t.title, fontWeight = FontWeight.Medium, textDecoration = if (d != null) TextDecoration.LineThrough else null)
-                        Text(
-                            "من ${Rules.fmt(t.start)} · آخر موعد ${Rules.fmt(t.start + t.dur)}",
-                            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    val label = when {
-                        d != null && !d.ok -> "بانتظار موافقة الليدر"
-                        d != null -> "تم +${Rules.pts(d.points)}"
-                        late -> "متأخر · ${Rules.pointsNow(t, nowMin, house.grace)} من ${t.points}"
-                        else -> "${t.points} نقطة"
-                    }
-                    Text(
-                        label, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(horizontal = 8.dp),
-                        color = if (late) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                    )
+        val chores = mine.filter { !it.personal }
+        val personal = mine.filter { it.personal }
+        if (chores.isEmpty()) Text("ما عليك مهام بيت اليوم.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        for (t in chores) TaskRow(t, doneToday[t.id], nowMin, house.grace, onToggle, null)
+
+        if (me.age != "u10") {
+            HorizontalDivider()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("مهامي الشخصية", fontWeight = FontWeight.Bold)
+                    Text("أنت تضيفها وتعدلها. بدون عقوبة، والنقاط بعد موافقة الليدر.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                OutlinedButton(onClick = { adding = true }) { Text("إضافة") }
             }
+            for (t in personal) TaskRow(t, doneToday[t.id], nowMin, house.grace, onToggle) { editing = t }
+        } else {
+            for (t in personal) TaskRow(t, doneToday[t.id], nowMin, house.grace, onToggle, null)
+        }
+    }
+
+    val e = editing
+    if (adding || e != null) {
+        PersonalDialog(
+            existing = e,
+            taken = tasks.filter { it.memberId == me.id && it.personal }.map { it.title }.toSet(),
+            onAdd = { title, days, start, dur ->
+                adding = false
+                scope.launch {
+                    try {
+                        // الاقتراحات الجاهزة موافق عليها بنقاطها، وغيرها يقدّرها المساعد وتنتظر الليدر
+                        val sug = Personal.suggestions.firstOrNull { it.title == title }
+                        val key = house.aiKey.ifBlank { BuildConfig.GEMINI_KEY }
+                        val points = sug?.points ?: if (key.isBlank()) 5 else try {
+                            Ai.estimate(key, house.aiModel.ifBlank { DEFAULT_AI_MODEL }, title, Personal.MAX_TASK)
+                        } catch (x: Exception) { 5 }
+                        repo.addTasks(code, days.map { d -> Task("", title, me.id, d, start, dur, points, personal = true, approved = sug != null) })
+                    } catch (x: Exception) { ctx.toast("ما انحفظ، تأكد من الإنترنت") }
+                }
+            },
+            onUpdate = { old, title, start, dur ->
+                editing = null
+                scope.launch {
+                    try { repo.updatePersonal(code, me.id, old.title, title, start, dur) } catch (x: Exception) { ctx.toast("ما انحفظ، تأكد من الإنترنت") }
+                }
+            },
+            onDelete = { old ->
+                editing = null
+                scope.launch {
+                    try { repo.deletePersonal(code, me.id, old.title) } catch (x: Exception) { ctx.toast("ما انحذف، تأكد من الإنترنت") }
+                }
+            },
+            onDismiss = { adding = false; editing = null },
+        )
+    }
+}
+
+/** صف مهمة في صفحة "مهامي". onEdit موجود بس للمهام الشخصية. */
+@Composable
+private fun TaskRow(t: Task, d: Done?, nowMin: Int, grace: Int, onToggle: (Task, Done?) -> Unit, onEdit: (() -> Unit)?) {
+    val late = d == null && !t.allDay && Rules.isLate(t, nowMin, grace)
+    val current = !t.allDay && nowMin >= t.start && nowMin <= t.start + t.dur
+    Card(
+        Modifier.fillMaxWidth().clickable { onToggle(t, d) },
+        colors = CardDefaults.cardColors(
+            containerColor = if (current && d == null) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+        ),
+    ) {
+        Row(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = d != null, onCheckedChange = { onToggle(t, d) })
+            Column(Modifier.weight(1f)) {
+                Text(t.title, fontWeight = FontWeight.Medium, textDecoration = if (d != null) TextDecoration.LineThrough else null)
+                Text(
+                    if (t.allDay) "بدون موعد" else "من ${Rules.fmt(t.start)} · آخر موعد ${Rules.fmt(t.start + t.dur)}",
+                    fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (onEdit != null) TextButton(onClick = onEdit, contentPadding = PaddingValues(0.dp)) { Text("تعديل", fontSize = 12.sp) }
+            }
+            val label = when {
+                d != null && !d.ok -> "بانتظار موافقة الليدر"
+                d != null -> "تم +${Rules.pts(d.points)}"
+                t.personal && !t.approved -> "مقترح ${t.points} · ينتظر الليدر"
+                late -> "متأخر · ${Rules.pointsNow(t, nowMin, grace)} من ${t.points}"
+                else -> "${t.points} نقطة"
+            }
+            Text(
+                label, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(horizontal = 8.dp),
+                color = if (late) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+            )
         }
     }
 }
@@ -283,9 +354,29 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                 val muted = MaterialTheme.colorScheme.onSurfaceVariant
 
                 // المهام المتأخرة تنتظر موافقة الليدر قبل ما تنحسب
-                val pending = done.filter { it.date == date && !it.ok }
-                if (pending.isNotEmpty()) {
+                val fresh = tasks.filter { it.personal && !it.approved }
+                val freshIds = fresh.map { it.id }.toSet()
+                val pending = done.filter { it.date == date && !it.ok && it.taskId !in freshIds }
+                if (pending.isNotEmpty() || fresh.isNotEmpty()) {
                     Text("بانتظار موافقتك", fontWeight = FontWeight.Bold)
+                    // مهام شخصية جديدة: توافقين على نقاطها مرة وحدة
+                    for ((who, list) in fresh.groupBy { it.memberId to it.title }) {
+                        key(who.first, who.second) {
+                            var pts by remember { mutableIntStateOf(list.first().points.coerceIn(1, Personal.MAX_TASK)) }
+                            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+                                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text("${names[who.first] ?: ""} أضاف مهمة شخصية: ${who.second}", fontWeight = FontWeight.Medium)
+                                    Text("${list.size} أيام بالأسبوع · اقتراح المساعد ${list.first().points} نقطة", fontSize = 12.sp)
+                                    Stepper("النقاط", "$pts", { pts = (pts - 1).coerceAtLeast(1) }, { pts = (pts + 1).coerceAtMost(Personal.MAX_TASK) })
+                                    Button(onClick = {
+                                        val ids = list.map { it.id }.toSet()
+                                        val waiting = done.firstOrNull { it.date == date && !it.ok && it.taskId in ids }
+                                        act { repo.approvePersonal(code, who.first, who.second, pts, waiting) }
+                                    }) { Text("موافقة على النقاط") }
+                                }
+                            }
+                        }
+                    }
                     for (p in pending) {
                         Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {

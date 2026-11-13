@@ -80,7 +80,7 @@ fun TimelineEditor(
 
     val colors = members.mapIndexed { i, m -> m.id to MEMBER_COLORS[i % MEMBER_COLORS.size] }.toMap()
     val lanes = if (who == "all") members else members.filter { it.id == who }
-    val dayTasks = tasks.filter { it.day == day }
+    val dayTasks = tasks.filter { it.day == day && !it.allDay }
     val line = MaterialTheme.colorScheme.outlineVariant
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
 
