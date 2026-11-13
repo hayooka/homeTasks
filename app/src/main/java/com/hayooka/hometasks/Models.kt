@@ -15,7 +15,7 @@ data class Member(
 data class Task(
     val id: String, val title: String, val memberId: String,
     val day: Int, val start: Int, val dur: Int, val points: Int,
-    /** personal: مهمة شخصية أضافها صاحبها. approved: الليدر وافقت على نقاطها. */
+    /** personal: مهمة شخصية أضافها صاحبها. approved: القائد وافق على نقاطها. */
     val personal: Boolean = false, val approved: Boolean = true,
 ) {
     /** بدون موعد: متاحة طول اليوم وما تتأخر. */
@@ -23,7 +23,7 @@ data class Task(
 }
 
 /** at: الدقيقة من اليوم اللي تأشّرت فيها المهمة، و-1 إذا مو معروفة. */
-/** ok: محسوبة. المهمة المتأخرة تبقى ok = false لحد ما الليدر توافق عليها. taskId = "streak" لمكافأة السلسلة. */
+/** ok: محسوبة. المهمة المتأخرة تبقى ok = false لحد ما القائد يوافق عليها. taskId = "streak" لمكافأة السلسلة. */
 data class Done(val taskId: String, val memberId: String, val date: String, val points: Double, val at: Int, val ok: Boolean)
 
 data class House(
@@ -31,7 +31,12 @@ data class House(
     val aiKey: String, val aiModel: String,
     val enforce: Boolean, val enforceDate: String, val enforceMin: Int,
     val seedVersion: Int,
+    /** بصمة كلمة السر اللي يحتاجها الأعضاء للخروج أو لإلغاء حماية الحذف. */
+    val uninstallHash: String,
 )
+
+fun secretHash(code: String, secret: String): String =
+    java.security.MessageDigest.getInstance("SHA-256").digest("$code:secret:$secret".toByteArray()).joinToString("") { "%02x".format(it) }
 
 val DAY_NAMES = listOf("الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت")
 val AGE_KEYS = listOf("u10", "u16", "adult")

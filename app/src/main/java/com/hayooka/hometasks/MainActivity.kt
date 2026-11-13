@@ -39,15 +39,6 @@ class MainActivity : ComponentActivity() {
 
 fun Context.toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 
-private val Light = lightColorScheme(
-    primary = Color(0xFF0D6B6B), onPrimary = Color.White, primaryContainer = Color(0xFFCDEBE8), onPrimaryContainer = Color(0xFF06302F),
-    background = Color(0xFFEEF1F4), surface = Color(0xFFFFFFFF), surfaceVariant = Color(0xFFE1E6EC),
-)
-private val Dark = darkColorScheme(
-    primary = Color(0xFF5CC4BF), onPrimary = Color(0xFF05302E), primaryContainer = Color(0xFF134A48), onPrimaryContainer = Color(0xFFCDEBE8),
-    background = Color(0xFF11161C), surface = Color(0xFF1A2129), surfaceVariant = Color(0xFF2C3642),
-)
-
 @Composable
 fun App() {
     val ctx = LocalContext.current
@@ -69,22 +60,20 @@ fun App() {
         if (c == null || m == null) Guard.stop(ctx)
     }
 
-    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) Dark else Light) {
+    GameTheme {
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                Box(Modifier.fillMaxSize().safeDrawingPadding()) {
-                    val c = code
-                    val m = me
-                    when {
-                        failed -> Centered {
-                            Text("ما قدرنا نتصل. تأكدي من الإنترنت.", textAlign = TextAlign.Center)
-                            Button(onClick = { attempt++ }) { Text("حاولي مرة ثانية") }
-                        }
-                        !ready -> Centered { CircularProgressIndicator() }
-                        c == null -> Welcome(repo, onCreated = { newCode -> save(newCode, "F") }, onJoined = { joined -> save(joined, null) })
-                        m == null -> PickMember(repo, c, onPicked = { id -> save(c, id) }, onBack = { save(null, null) })
-                        else -> Home(repo, c, m, onLogout = { save(null, null) })
+            Box(Modifier.fillMaxSize().safeDrawingPadding()) {
+                val c = code
+                val m = me
+                when {
+                    failed -> Centered {
+                        Text("ما قدرنا نتصل. تأكدي من الإنترنت.", textAlign = TextAlign.Center)
+                        Button(onClick = { attempt++ }) { Text("حاولي مرة ثانية") }
                     }
+                    !ready -> Centered { CircularProgressIndicator() }
+                    c == null -> Welcome(repo, onCreated = { newCode -> save(newCode, "F") }, onJoined = { joined -> save(joined, null) })
+                    m == null -> PickMember(repo, c, onPicked = { id -> save(c, id) }, onBack = { save(null, null) })
+                    else -> Home(repo, c, m, onLogout = { save(null, null) })
                 }
             }
         }
@@ -145,7 +134,7 @@ fun Welcome(repo: Repo, onCreated: (String) -> Unit, onJoined: (String) -> Unit)
         when (mode) {
             "" -> {
                 Button(onClick = { mode = "join" }, modifier = Modifier.fillMaxWidth()) { Text("دخول بكود البيت") }
-                OutlinedButton(onClick = { mode = "create" }, modifier = Modifier.fillMaxWidth()) { Text("إنشاء بيت جديد (للّيدر)") }
+                OutlinedButton(onClick = { mode = "create" }, modifier = Modifier.fillMaxWidth()) { Text("إنشاء بيت جديد (للقائد)") }
             }
             "join" -> {
                 OutlinedTextField(
@@ -169,7 +158,7 @@ fun Welcome(repo: Repo, onCreated: (String) -> Unit, onJoined: (String) -> Unit)
             else -> {
                 OutlinedTextField(houseName, { houseName = it.take(30) }, label = { Text("اسم البيت") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 PinField(pin, { pin = it }, "رقمك السري (4 أرقام)")
-                Text("ينشأ البيت جاهز بأعضاء العائلة وجدول الأسبوع، وأنتِ الليدر.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("ينشأ البيت جاهز بأعضاء العائلة وجدول الأسبوع، وأنتِ اللقائد.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Button(
                     enabled = !busy && pin.length == 4 && houseName.isNotBlank(), modifier = Modifier.fillMaxWidth(),
                     onClick = {

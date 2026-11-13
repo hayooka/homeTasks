@@ -63,7 +63,7 @@ private fun LockScreen(onClose: () -> Unit) {
             ) {
                 if (m != null && m.character >= 0) CharacterView(m.character, Rules.level(m.total), Modifier.size(180.dp))
                 Text("الجوال في إجازة يا ${m?.name ?: ""}", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White, textAlign = TextAlign.Center)
-                Text("يرجع لك أول ما تخلص المهام الفايتة والليدر توافق عليها.", color = Color(0xFFB8C4D0), textAlign = TextAlign.Center)
+                Text("يرجع لك أول ما تخلص المهام الفايتة والقائد يوافق عليها.", color = Color(0xFFB8C4D0), textAlign = TextAlign.Center)
                 Text(clock, fontSize = 44.sp, fontWeight = FontWeight.Bold, color = Color(0xFF5CC4BF))
                 Text("وإذا ما خلصتها، يفتح لحاله آخر اليوم.", fontSize = 12.sp, color = Color(0xFFB8C4D0))
 
@@ -75,7 +75,7 @@ private fun LockScreen(onClose: () -> Unit) {
                                 Text("كان آخر موعد ${Rules.fmt(t.start + t.dur)}", fontSize = 12.sp, color = Color(0xFFB8C4D0))
                             }
                             if (t.id in pending) {
-                                Text("بانتظار موافقة الليدر", fontSize = 12.sp, color = Color(0xFF5CC4BF))
+                                Text("بانتظار موافقة اللقائد", fontSize = 12.sp, color = Color(0xFF5CC4BF))
                             } else Button(onClick = {
                                 val code = Guard.code ?: return@Button
                                 val nowMin = now.hour * 60 + now.minute

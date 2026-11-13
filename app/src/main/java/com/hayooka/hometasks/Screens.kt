@@ -17,6 +17,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -61,7 +63,7 @@ fun Home(repo: Repo, code: String, meId: String, onLogout: () -> Unit) {
             try {
                 if (d != null) repo.undo(code, t, date, d)
                 else {
-                    // المتأخرة تنتظر موافقة الليدر (إلا مهام الليدر نفسها)
+                    // المتأخرة تنتظر موافقة اللقائد (إلا مهام اللقائد نفسها)
                     val late = Rules.isLate(t, nowMin, house.grace)
                     var pts = Rules.pointsNow(t, nowMin, house.grace).toDouble()
                     if (t.personal) {
@@ -70,7 +72,7 @@ fun Home(repo: Repo, code: String, meId: String, onLogout: () -> Unit) {
                         val got = done.filter { it.date == date && it.memberId == me.id && it.ok && it.taskId in ids }.sumOf { it.points }
                         pts = minOf(pts, (Personal.MAX_DAY - got).coerceAtLeast(0.0))
                     }
-                    // المتأخرة والشخصية اللي لسا ما انوافق على نقاطها تنتظر الليدر
+                    // المتأخرة والشخصية اللي لسا ما انوافق على نقاطها تنتظر اللقائد
                     repo.complete(code, t, date, pts, nowMin, (!late || me.leader) && (!t.personal || t.approved))
                     if (!late) {
                         val mine = tasks.filter { it.memberId == me.id && it.day == Rules.dayIndex(today) }
@@ -89,18 +91,14 @@ fun Home(repo: Repo, code: String, meId: String, onLogout: () -> Unit) {
     val pages = if (me.leader) listOf("مهامي", "الترتيب", "الإدارة") else listOf("مهامي", "الترتيب")
     val pager = rememberPagerState(pageCount = { pages.size })
     Column(Modifier.fillMaxSize()) {
-        TabRow(selectedTabIndex = pager.currentPage.coerceAtMost(pages.size - 1)) {
-            pages.forEachIndexed { i, title ->
-                Tab(selected = pager.currentPage == i, onClick = { scope.launch { pager.animateScrollToPage(i) } }, text = { Text(title) })
-            }
-        }
         HorizontalPager(state = pager, modifier = Modifier.weight(1f)) { page ->
             when (page) {
                 0 -> TodayPage(repo, code, me, house, tasks, done, today, nowMin, toggle)
-                1 -> RankPage(members, done, weekStart.toString(), meId, house, tasks, today, nowMin, onLogout)
+                1 -> RankPage(code, members, done, weekStart.toString(), meId, house, tasks, today, nowMin, onLogout)
                 else -> ManagePage(repo, code, house, members, tasks, done, today)
             }
         }
+        GameTabs(pages, pager.currentPage.coerceAtMost(pages.size - 1)) { i -> scope.launch { pager.animateScrollToPage(i) } }
     }
 }
 
@@ -130,25 +128,35 @@ fun TodayPage(
         val level = Rules.level(me.total)
         val left = Rules.LEVEL_SIZE - (me.total % Rules.LEVEL_SIZE)
         val allDone = mine.isNotEmpty() && mine.all { doneToday[it.id]?.ok == true }
-        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(contentAlignment = Alignment.Center) {
-                Box(Modifier.size(230.dp).clip(CircleShape).background(CHARACTER_COLORS[kind].copy(alpha = 0.16f)))
-                CharacterView(me.character, level, Modifier.size(200.dp))
+                // هالة مضيئة بلون الشخصية
+                Box(
+                    Modifier.size(260.dp).background(
+                        Brush.radialGradient(listOf(CHARACTER_COLORS[kind].copy(alpha = 0.55f), CHARACTER_COLORS[kind].copy(alpha = 0.10f), Color.Transparent)),
+                        CircleShape,
+                    ),
+                )
+                CharacterView(me.character, level, Modifier.size(215.dp))
             }
-            Text("${me.name} · ${CHARACTER_NAMES[kind]}", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            Text("المستوى $level · ${Rules.pts(me.total)} نقطة", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            LinearProgressIndicator(progress = { Rules.levelProgress(me.total) }, modifier = Modifier.width(230.dp))
+            Text(me.name, fontSize = 30.sp, fontWeight = FontWeight.Black)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Pill("المستوى $level", GNeon)
+                Pill("${Rules.pts(me.total)} نقطة", GGold)
+                if (streak > 0) Pill("سلسلة $streak", GHot)
+            }
+            XpBar(Rules.levelProgress(me.total), Modifier.fillMaxWidth(0.82f))
             Text("باقي ${Rules.pts(left)} نقطة للمستوى الجاي", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(
-                if (streak > 0) "سلسلة $streak أيام · مكافأة اليوم الكامل الجاي +${Rules.pts(0.5 * (streak + if (me.streakDate == date) 0 else 1))}"
+                if (streak > 0) "مكافأة اليوم الكامل الجاي +${Rules.pts(0.5 * (streak + if (me.streakDate == date) 0 else 1))}"
                 else "خلّص كل مهامك بوقتها وابدأ سلسلة: +0.5 أول يوم، وتزيد نص نقطة كل يوم",
-                fontSize = 12.sp, color = MaterialTheme.colorScheme.primary,
+                fontSize = 12.sp, color = GNeon,
             )
         }
         Text(
             if (allDone) "${DAY_NAMES[Rules.dayIndex(today)]} · خلصت كل مهامك! ${Rules.pts(earned)} نقطة"
             else "${DAY_NAMES[Rules.dayIndex(today)]} · نقاط اليوم ${Rules.pts(earned)} من $possible",
-            fontWeight = FontWeight.Medium,
+            fontSize = 18.sp, fontWeight = FontWeight.Bold,
         )
 
         if (house.enforce && Penalty.enforcedOnPhone(me)) GuardSetupCard()
@@ -171,7 +179,7 @@ fun TodayPage(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("مهامي الشخصية", fontWeight = FontWeight.Bold)
-                Text("أنت تضيفها وتعدلها. بدون عقوبة، والنقاط بعد موافقة الليدر.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("أنت تضيفها وتعدلها. بدون عقوبة، والنقاط بعد موافقة اللقائد.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             OutlinedButton(onClick = { adding = true }) { Text("إضافة") }
         }
@@ -187,7 +195,7 @@ fun TodayPage(
                 adding = false
                 scope.launch {
                     try {
-                        // الاقتراحات الجاهزة موافق عليها بنقاطها، وغيرها يقدّرها المساعد وتنتظر الليدر
+                        // الاقتراحات الجاهزة موافق عليها بنقاطها، وغيرها يقدّرها المساعد وتنتظر اللقائد
                         val sug = Personal.suggestions.firstOrNull { it.title == title }
                         val key = house.aiKey.ifBlank { BuildConfig.GEMINI_KEY }
                         val points = sug?.points ?: if (key.isBlank()) 5 else try {
@@ -236,16 +244,13 @@ private fun TaskRow(t: Task, d: Done?, nowMin: Int, grace: Int, onToggle: (Task,
                 if (onEdit != null) TextButton(onClick = onEdit, contentPadding = PaddingValues(0.dp)) { Text("تعديل", fontSize = 12.sp) }
             }
             val label = when {
-                d != null && !d.ok -> "بانتظار موافقة الليدر"
+                d != null && !d.ok -> "بانتظار موافقة اللقائد"
                 d != null -> "تم +${Rules.pts(d.points)}"
-                t.personal && !t.approved -> "مقترح ${t.points} · ينتظر الليدر"
+                t.personal && !t.approved -> "مقترح ${t.points} · ينتظر اللقائد"
                 late -> "متأخر · ${Rules.pointsNow(t, nowMin, grace)} من ${t.points}"
                 else -> "${t.points} نقطة"
             }
-            Text(
-                label, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(horizontal = 8.dp),
-                color = if (late) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-            )
+            Pill(label, if (late) GHot else if (d != null && d.ok) GNeon else GGold, Modifier.padding(horizontal = 6.dp))
         }
     }
 }
@@ -254,7 +259,7 @@ private fun TaskRow(t: Task, d: Done?, nowMin: Int, grace: Int, onToggle: (Task,
 
 @Composable
 fun RankPage(
-    members: List<Member>, done: List<Done>, weekStart: String, meId: String,
+    code: String, members: List<Member>, done: List<Done>, weekStart: String, meId: String,
     house: House, tasks: List<Task>, today: LocalDate, nowMin: Int, onLogout: () -> Unit,
 ) {
     val week = done.filter { it.ok && it.date >= weekStart }.groupBy { it.memberId }.mapValues { e -> e.value.sumOf { it.points } }
@@ -298,11 +303,40 @@ fun RankPage(
                 }
             }
         }
-        TextButton(onClick = onLogout) { Text("تسجيل خروج") }
+        // وقت تنفيذ العقوبات، الخروج وإلغاء حماية الحذف يحتاجون كلمة السر اللي حطها القائد
+        val ctx = LocalContext.current
+        val me = members.firstOrNull { it.id == meId }
+        val guarded = house.enforce && me != null && Penalty.enforcedOnPhone(me)
+        var ask by remember { mutableStateOf("") }
+        TextButton(onClick = { if (guarded) ask = "logout" else onLogout() }) { Text("تسجيل خروج") }
+        if (guarded && Guard.adminReady(ctx)) TextButton(onClick = { ask = "admin" }) { Text("إلغاء حماية الحذف") }
+        if (ask.isNotEmpty()) {
+            var pwd by remember { mutableStateOf("") }
+            AlertDialog(
+                onDismissRequest = { ask = "" },
+                title = { Text(if (ask == "logout") "تسجيل الخروج" else "إلغاء حماية الحذف") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("اكتب كلمة السر اللي عند القائد.")
+                        OutlinedTextField(pwd, { pwd = it.take(30) }, label = { Text("كلمة السر") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        if (house.uninstallHash.isNotEmpty() && secretHash(code, pwd) == house.uninstallHash) {
+                            val what = ask
+                            ask = ""
+                            if (what == "logout") onLogout() else { Guard.removeAdmin(ctx); ctx.toast("انلغت حماية الحذف") }
+                        } else ctx.toast(if (house.uninstallHash.isEmpty()) "القائد لسا ما حط كلمة سر" else "كلمة السر غلط")
+                    }) { Text("تأكيد") }
+                },
+                dismissButton = { TextButton(onClick = { ask = "" }) { Text("إلغاء") } },
+            )
+        }
     }
 }
 
-// ---------------- الإدارة (لليدر) ----------------
+// ---------------- الإدارة (للقائد) ----------------
 
 @Composable
 fun Stepper(label: String, value: String, onMinus: () -> Unit, onPlus: () -> Unit) {
@@ -352,7 +386,7 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                 val titles = tasks.associate { it.id to it.title }
                 val muted = MaterialTheme.colorScheme.onSurfaceVariant
 
-                // المهام المتأخرة تنتظر موافقة الليدر قبل ما تنحسب
+                // المهام المتأخرة تنتظر موافقة اللقائد قبل ما تنحسب
                 val fresh = tasks.filter { it.personal && !it.approved }
                 val freshIds = fresh.map { it.id }.toSet()
                 val pending = done.filter { it.date == date && !it.ok && it.taskId !in freshIds }
@@ -407,7 +441,7 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                             if (st.missed > 0) Text("فاتته ${st.missed} · ${Penalty.describe(st, m)}", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
                             val stale = System.currentTimeMillis() - m.guardAt > 20 * 60_000
                             if (house.enforce && Penalty.enforcedOnPhone(m) && (stale || !m.guardOk)) {
-                                Text("العقوبات مو مفعّلة على جواله حالياً", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                                Text("الحماية مو كاملة على جواله: إذن ناقص أو حماية الحذف متوقفة", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
                             }
                             val streak = Rules.streakNow(m, today)
                             if (streak > 0) Text("سلسلة $streak أيام", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
@@ -423,7 +457,7 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                                             onCheckedChange = {
                                                 if (d != null) act { repo.undo(code, t, date, d) }
                                                 else act {
-                                                    // تأشير الليدر عن العضو: تنحسب بوقتها وبنقاطها كاملة
+                                                    // تأشير اللقائد عن العضو: تنحسب بوقتها وبنقاطها كاملة
                                                     repo.complete(code, t, date, t.points.toDouble(), minOf(nowMin, t.start + t.dur), true)
                                                     if (Rules.allOnTime(mine, dm.values.toList(), t.id, house.grace)) repo.awardStreak(code, m, today)
                                                 }
@@ -454,7 +488,7 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                         onAdd = { title, days, start, dur ->
                             personalFor = null
                             act {
-                                // إضافة الليدر موافق عليها مباشرة؛ النقاط من الاقتراح الجاهز أو من تقدير المساعد
+                                // إضافة اللقائد موافق عليها مباشرة؛ النقاط من الاقتراح الجاهز أو من تقدير المساعد
                                 val sug = Personal.suggestions.firstOrNull { it.title == title }
                                 val key = house.aiKey.ifBlank { BuildConfig.GEMINI_KEY }
                                 val points = sug?.points ?: if (key.isBlank()) 5 else try {
@@ -478,7 +512,7 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                 for (m in members) {
                     Card(Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(m.name + if (m.leader) " (ليدر)" else "", fontWeight = FontWeight.Bold)
+                            Text(m.name + if (m.leader) " (قائد)" else "", fontWeight = FontWeight.Bold)
                             Chips(ages, m.age) { a -> act { repo.setAge(code, m.id, a) } }
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 if (!m.leader) {
@@ -537,7 +571,24 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                 Text(
                     "المهمة الفايتة الأولى = ساعة بدون إنترنت، الثانية = ساعتين، الثالثة = 3 ساعات، والرابعة = قفل الجوال لحد ما تنعمل كل المهام الفايتة. " +
                         "الحساب يبدأ من لحظة التشغيل، وكل شي يتصفّر آخر اليوم. إيقافه من هنا يفك أي قطع أو قفل فوراً. " +
-                        "ما ينطبق على جوال الليدر ولا على اللي تحت 10.",
+                        "ما ينطبق على جوال اللقائد ولا على اللي تحت 10.",
+                    fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                HorizontalDivider()
+                var secret by remember { mutableStateOf("") }
+                Text("كلمة سر الحذف والخروج", fontWeight = FontWeight.Bold)
+                Text(
+                    if (house.uninstallHash.isEmpty()) "ما في كلمة سر حالياً." else "في كلمة سر محفوظة. اكتبي وحدة جديدة لتغييرها.",
+                    fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(secret, { secret = it.take(30) }, label = { Text("كلمة السر") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Button(
+                    enabled = secret.length >= 4,
+                    onClick = { val v = secret; secret = ""; act { repo.setUninstallHash(code, secretHash(code, v)); ctx.toast("انحفظت كلمة السر") } },
+                ) { Text("حفظ كلمة السر") }
+                Text(
+                    "إخوانك يحتاجونها عشان يسجلون خروج أو يلغون حماية الحذف من داخل التطبيق. لا تعطينها لهم إلا لما تبغين.",
                     fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
@@ -612,12 +663,13 @@ fun GuardSetupCard() {
     ) { refresh++ }
     val vpnOk = remember(refresh) { Guard.vpnReady(ctx) }
     val overlayOk = remember(refresh) { Guard.overlayReady(ctx) }
-    if (vpnOk && overlayOk) return
+    val adminOk = remember(refresh) { Guard.adminReady(ctx) }
+    if (vpnOk && overlayOk && adminOk) return
 
     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("فعّل العقوبات على جوالك", fontWeight = FontWeight.Bold)
-            Text("البيت متفق إن المهام الفايتة لها عقوبة: قطع الإنترنت أو قفل الجوال. التطبيق يحتاج إذنين عشان ينفذها.", fontSize = 13.sp)
+            Text("البيت متفق إن المهام الفايتة لها عقوبة: قطع الإنترنت أو قفل الجوال. التطبيق يحتاج ثلاث أذونات عشان ينفذها.", fontSize = 13.sp)
             if (!vpnOk) Button(onClick = {
                 val i = android.net.VpnService.prepare(ctx)
                 if (i != null) vpnLauncher.launch(i) else refresh++
@@ -630,6 +682,15 @@ fun GuardSetupCard() {
                     )
                 } catch (e: Exception) { ctx.toast("افتح الإعدادات ← التطبيقات ← مهام البيت ← الظهور فوق التطبيقات") }
             }) { Text("2. السماح بشاشة القفل") }
+            if (!adminOk) Button(onClick = {
+                try {
+                    ctx.startActivity(
+                        android.content.Intent(android.app.admin.DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
+                            .putExtra(android.app.admin.DevicePolicyManager.EXTRA_DEVICE_ADMIN, android.content.ComponentName(ctx, AdminReceiver::class.java))
+                            .putExtra(android.app.admin.DevicePolicyManager.EXTRA_ADD_EXPLANATION, "يمنع حذف التطبيق بدون كلمة السر اللي عند القائد."),
+                    )
+                } catch (e: Exception) { ctx.toast("ما قدرنا نفتح صفحة الإذن") }
+            }) { Text("3. حماية التطبيق من الحذف") }
             if (android.os.Build.VERSION.SDK_INT >= 33) {
                 TextButton(onClick = { notifLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) }) { Text("السماح بالإشعارات (اختياري)") }
             }

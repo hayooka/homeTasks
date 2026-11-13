@@ -53,7 +53,7 @@ object Penalty {
                 deadline > floor && nowMin > deadline && (dn == null || dn.at > deadline)
             }
             .sortedBy { it.second }
-        // تبقى "فايتة" لحد ما تنعمل والليدر توافق عليها
+        // تبقى "فايتة" لحد ما تنعمل والقائد يوافق عليها
         val overdue = missed.filter { mineDone[it.first.id]?.ok != true }.map { it.first }
         var until = 0
         missed.take(3).forEachIndexed { i, (_, deadline) ->
@@ -63,7 +63,7 @@ object Penalty {
         return PenaltyState(missed.size, overdue, until, missed.size >= 4 && overdue.isNotEmpty())
     }
 
-    /** هل العقوبة تتنفذ فعلياً على جوال هذا الشخص؟ الليدر والصغار (عقوبتهم التلفزيون) لا. */
+    /** هل العقوبة تتنفذ فعلياً على جوال هذا الشخص؟ اللقائد والصغار (عقوبتهم التلفزيون) لا. */
     fun enforcedOnPhone(m: Member) = !m.leader && m.age != "u10"
 
     fun describe(st: PenaltyState, m: Member): String = when {
@@ -85,7 +85,7 @@ object Penalty {
 object Guard {
     val lock = mutableStateOf(false)
     val overdue = mutableStateOf<List<Task>>(emptyList())
-    /** مهام فايتة أشّر عليها العضو وتنتظر موافقة الليدر. */
+    /** مهام فايتة أشّر عليها العضو وتنتظر موافقة اللقائد. */
     val pending = mutableStateOf<Set<String>>(emptySet())
     val member = mutableStateOf<Member?>(null)
     @Volatile var code: String? = null
@@ -95,6 +95,13 @@ object Guard {
 
     fun vpnReady(c: Context) = VpnService.prepare(c) == null
     fun overlayReady(c: Context) = Settings.canDrawOverlays(c)
+    private fun admin(c: Context) = android.content.ComponentName(c, AdminReceiver::class.java)
+    private fun dpm(c: Context) = c.getSystemService(Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
+    /** لما تكون مفعّلة، النظام ما يسمح بحذف التطبيق. */
+    fun adminReady(c: Context) = dpm(c).isAdminActive(admin(c))
+    fun removeAdmin(c: Context) {
+        try { dpm(c).removeActiveAdmin(admin(c)) } catch (e: Exception) { }
+    }
     fun start(c: Context) {
         try { ContextCompat.startForegroundService(c, Intent(c, EnforcerService::class.java)) } catch (e: Exception) { }
     }
@@ -187,7 +194,7 @@ class EnforcerService : Service() {
         val ms = System.currentTimeMillis()
         if (m != null && ms - lastBeat > 5 * 60_000) {
             lastBeat = ms
-            val ok = Guard.vpnReady(this) && Guard.overlayReady(this)
+            val ok = Guard.vpnReady(this) && Guard.overlayReady(this) && Guard.adminReady(this)
             scope.launch { try { repo.beat(code, meId, ok) } catch (e: Exception) { } }
         }
     }
@@ -245,5 +252,18 @@ class BlockVpnService : VpnService() {
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) Guard.start(context)
+    }
+}
+
+/** حماية الحذف: طول ما هي مفعّلة النظام يرفض حذف التطبيق. إيقافها من إعدادات الجوال يبلّغ القائد فوراً. */
+class AdminReceiver : android.app.admin.DeviceAdminReceiver() {
+    override fun onDisableRequested(context: Context, intent: Intent): CharSequence =
+        "إيقاف هذي الحماية يوصل تنبيه للقائد فوراً."
+
+    override fun onDisabled(context: Context, intent: Intent) {
+        val prefs = context.getSharedPreferences("session", Context.MODE_PRIVATE)
+        val code = prefs.getString("code", null) ?: return
+        val me = prefs.getString("me", null) ?: return
+        CoroutineScope(Dispatchers.IO).launch { try { Repo().beat(code, me, false) } catch (e: Exception) { } }
     }
 }

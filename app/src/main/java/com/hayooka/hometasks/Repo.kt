@@ -82,7 +82,7 @@ class Repo {
                         s.getString("name") ?: "", (s.getLong("grace") ?: 30L).toInt(), s.getString("startDate") ?: "", pen,
                         s.getString("aiKey") ?: "", s.getString("aiModel") ?: "",
                         s.getBoolean("enforce") ?: false, s.getString("enforceDate") ?: "", (s.getLong("enforceMin") ?: 0L).toInt(),
-                        (s.getLong("seedVersion") ?: 1L).toInt(),
+                        (s.getLong("seedVersion") ?: 1L).toInt(), s.getString("uninstallHash") ?: "",
                     ),
                 )
             }
@@ -117,7 +117,7 @@ class Repo {
 
     // ---------- كتابة ----------
 
-    /** ok = false للمهمة المتأخرة: تنسجل بس نقاطها ما تنضاف لحد ما الليدر توافق. */
+    /** ok = false للمهمة المتأخرة: تنسجل بس نقاطها ما تنضاف لحد ما القائد يوافق. */
     suspend fun complete(code: String, t: Task, date: String, points: Double, at: Int, ok: Boolean) {
         val b = db.batch()
         b.set(
@@ -135,7 +135,7 @@ class Repo {
         b.commit().await()
     }
 
-    /** موافقة الليدر على مهمة متأخرة: تنحسب نقاطها. */
+    /** موافقة اللقائد على مهمة متأخرة: تنحسب نقاطها. */
     suspend fun approve(code: String, d: Done) {
         val b = db.batch()
         b.update(done(code).document("${d.date}_${d.taskId}"), "ok", true)
@@ -143,7 +143,7 @@ class Repo {
         b.commit().await()
     }
 
-    /** رفض الليدر: المهمة ترجع غير معمولة. */
+    /** رفض اللقائد: المهمة ترجع غير معمولة. */
     suspend fun reject(code: String, d: Done) {
         done(code).document("${d.date}_${d.taskId}").delete().await()
     }
@@ -225,6 +225,10 @@ class Repo {
         members(code).document(memberId).update(mapOf("guardAt" to System.currentTimeMillis(), "guardOk" to ok)).await()
     }
 
+    suspend fun setUninstallHash(code: String, hash: String) {
+        house(code).update("uninstallHash", hash).await()
+    }
+
     suspend fun saveAi(code: String, key: String, model: String) {
         house(code).update(mapOf("aiKey" to key, "aiModel" to model)).await()
     }
@@ -252,7 +256,7 @@ class Repo {
         b.commit().await()
     }
 
-    /** موافقة الليدر على نقاط مهمة شخصية. إذا صاحبها أشّر عليها اليوم وهي تنتظر، تنحسب له بالنقاط الموافق عليها. */
+    /** موافقة اللقائد على نقاط مهمة شخصية. إذا صاحبها أشّر عليها اليوم وهي تنتظر، تنحسب له بالنقاط الموافق عليها. */
     suspend fun approvePersonal(code: String, memberId: String, title: String, points: Int, pending: Done?) {
         val docs = personalDocs(code, memberId, title)
         val b = db.batch()
