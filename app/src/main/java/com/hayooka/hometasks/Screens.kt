@@ -199,11 +199,11 @@ fun TodayPage(
 
         // تنبيه نهاية الشهر وبداية الشهر الجديد
         val monthEnd = today.withDayOfMonth(today.lengthOfMonth())
-        val left = monthEnd.dayOfMonth - today.dayOfMonth
-        if (!past && (left <= 3 || today.dayOfMonth <= 3)) {
+        val daysToEnd = monthEnd.dayOfMonth - today.dayOfMonth
+        if (!past && (daysToEnd <= 3 || today.dayOfMonth <= 3)) {
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
                 Text(
-                    if (left <= 3) (if (left == 0) "آخر يوم بمسابقة ${MONTH_NAMES[today.monthValue - 1]}! تنتهي الليلة." else "باقي $left أيام على نهاية مسابقة ${MONTH_NAMES[today.monthValue - 1]}.")
+                    if (daysToEnd <= 3) (if (daysToEnd == 0) "آخر يوم بمسابقة ${MONTH_NAMES[today.monthValue - 1]}! تنتهي الليلة." else "باقي $daysToEnd أيام على نهاية مسابقة ${MONTH_NAMES[today.monthValue - 1]}.")
                     else "بدأت مسابقة ${MONTH_NAMES[today.monthValue - 1]}! شوف نتيجة الشهر اللي فات في الترتيب ← مسابقة الشهر.",
                     Modifier.padding(12.dp), fontWeight = FontWeight.Bold,
                 )
