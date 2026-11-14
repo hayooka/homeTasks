@@ -56,11 +56,12 @@ object Penalty {
         // تبقى "فايتة" لحد ما تنعمل والقائد يوافق عليها
         val overdue = missed.filter { mineDone[it.first.id]?.ok != true }.map { it.first }
         var until = 0
-        missed.take(3).forEachIndexed { i, (_, deadline) ->
+        // الفايتة الأولى تنبيه بس، وبعدها: ساعة، ساعتين، 3 ساعات، ثم قفل
+        missed.drop(1).take(3).forEachIndexed { i, (_, deadline) ->
             val end = minOf(deadline + (i + 1) * 60, 24 * 60)
             if (nowMin < end) until = maxOf(until, end)
         }
-        return PenaltyState(missed.size, overdue, until, missed.size >= 4 && overdue.isNotEmpty())
+        return PenaltyState(missed.size, overdue, until, missed.size >= 5 && overdue.isNotEmpty())
     }
 
     /** هل العقوبة تتنفذ فعلياً على جوال هذا الشخص؟ القائد والصغار (عقوبتهم التلفزيون) لا. */
@@ -73,10 +74,12 @@ object Penalty {
             st.missed >= 7 -> "راحت عليك 3 ساعات يوتيوب."
             st.missed >= 5 -> "راحت عليك ساعتين يوتيوب."
             st.missed >= 3 -> "راحت عليك ساعة يوتيوب."
-            else -> "تنبيه بس، لسا ما في عقوبة. مهمة فايتة ثالثة تنقّص ساعة يوتيوب."
+            st.missed == 1 -> "تنبيه: فاتتك مهمة. ما في عقوبة لسا."
+            else -> "تنبيه ثاني. مهمة فايتة ثالثة تنقّص ساعة يوتيوب."
         }
         st.lock -> "الجوال مقفول لحد ما تخلص كل المهام الفايتة."
         st.block -> "الإنترنت مقطوع عن الجوال لحد ${Rules.fmt(st.blockUntil)}."
+        st.missed == 1 -> "تنبيه: فاتتك مهمة. الفايتة الجاية تقطع الإنترنت ساعة."
         else -> "خلصت مدة القطع. أي مهمة فايتة ثانية تزيد العقوبة."
     }
 }
@@ -139,6 +142,16 @@ class EnforcerService : Service() {
         scope.launch {
             try { repo.signIn() } catch (e: Exception) { }
             launch { repo.houseFlow(code).collect { house = it } }
+            launch {
+                repo.houseGoneFlow(code).collect { gone ->
+                    if (gone) {
+                        prefs.edit().remove("code").remove("me").apply()
+                        Guard.removeAdmin(this@EnforcerService)
+                        Guard.lock.value = false
+                        stopSelf()
+                    }
+                }
+            }
             launch { repo.membersFlow(code).collect { list -> me = list.firstOrNull { it.id == meId } } }
             launch { repo.tasksFlow(code).collect { tasks = it } }
             while (isActive) {

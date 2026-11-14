@@ -40,7 +40,32 @@ class Repo {
         return bytes.joinToString("") { "%02x".format(it) }
     }
 
-    suspend fun houseExists(code: String): Boolean = house(code).get().await().exists()
+    suspend fun houseExists(code: String): Boolean = house(code).get().await().let { it.exists() && it.getBoolean("deleted") != true }
+
+    /** يطلع true لما البيت ينحذف، عشان كل الجوالات تطلع منه فوراً. */
+    fun houseGoneFlow(code: String): Flow<Boolean> = callbackFlow {
+        val reg = house(code).addSnapshotListener { s, e ->
+            if (s != null && e == null && !s.metadata.isFromCache) trySend(!s.exists() || s.getBoolean("deleted") == true)
+        }
+        awaitClose { reg.remove() }
+    }
+
+    /**
+     * حذف البيت نهائياً: كل الأعضاء والمهام والسجل، وكود الدخول المختار.
+     * مستند البيت نفسه يصير علامة "محذوف" بدون أي بيانات، فكوده ما يرجع يشتغل.
+     */
+    suspend fun deleteHouse(code: String, alias: String) {
+        for (sub in listOf("members", "tasks", "done", "days")) {
+            val refs = house(code).collection(sub).get().await().documents.map { it.reference }
+            for (chunk in refs.chunked(400)) {
+                val b = db.batch()
+                for (r in chunk) b.delete(r)
+                b.commit().await()
+            }
+        }
+        if (alias.isNotEmpty()) db.collection("codes").document(alias).set(mapOf("house" to "")).await()
+        house(code).set(mapOf("deleted" to true)).await()
+    }
 
     /** يحوّل اللي انكتب في شاشة الدخول لكود البيت الحقيقي: إما هو نفسه، أو كود اختاره القائد. null = ما في بيت. */
     suspend fun resolveCode(input: String): String? {
@@ -98,7 +123,7 @@ class Repo {
 
     fun houseFlow(code: String): Flow<House?> = callbackFlow {
         val reg = house(code).addSnapshotListener { s, _ ->
-            if (s != null && s.exists()) {
+            if (s != null && s.exists() && s.getBoolean("deleted") != true) {
                 val pen = (s.get("penalties") as? Map<*, *>)?.entries
                     ?.associate { it.key.toString() to it.value.toString() } ?: emptyMap()
                 trySend(

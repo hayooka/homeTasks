@@ -108,6 +108,9 @@ fun Home(repo: Repo, code: String, meId: String, onLogout: () -> Unit) {
         if (me.leader && house.seedVersion < SEED_VERSION) try { repo.migrateSeed(code, house.seedVersion) } catch (e: Exception) { }
     }
 
+    // إذا القائد حذف البيت، الكل يطلع منه
+    LaunchedEffect(code) { repo.houseGoneFlow(code).collect { if (it) onLogout() } }
+
     val pages = if (me.leader) listOf("مهامي", "الترتيب", "الإدارة") else listOf("مهامي", "الترتيب")
     val pager = rememberPagerState(pageCount = { pages.size })
     Column(Modifier.fillMaxSize()) {
@@ -731,7 +734,8 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                     )
                 }
                 Text(
-                    "المهمة الفايتة الأولى = ساعة بدون إنترنت، الثانية = ساعتين، الثالثة = 3 ساعات، والرابعة = قفل الجوال لحد ما تنعمل كل المهام الفايتة. " +
+                    "المهمة الفايتة الأولى تنبيه بس. الثانية = ساعة بدون إنترنت، الثالثة = ساعتين، الرابعة = 3 ساعات، والخامسة = قفل الجوال لحد ما تنعمل كل المهام الفايتة. " +
+                        "اللي تحت 10: تنبيه أول، وبعدها عقوبة يوتيوب تزيد كل مهمتين. " +
                         "الحساب يبدأ من لحظة التشغيل، وكل شي يتصفّر آخر اليوم. إيقافه من هنا يفك أي قطع أو قفل فوراً. " +
                         "ما ينطبق على جوال القائد ولا على اللي تحت 10.",
                     fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -805,6 +809,32 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
 
                 HorizontalDivider()
                 var confirmReset by remember { mutableStateOf(false) }
+                var confirmDelete by remember { mutableStateOf(false) }
+                var typed by remember { mutableStateOf("") }
+                OutlinedButton(onClick = { typed = ""; confirmDelete = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("حذف البيت نهائياً", color = MaterialTheme.colorScheme.error)
+                }
+                if (confirmDelete) {
+                    AlertDialog(
+                        onDismissRequest = { confirmDelete = false },
+                        title = { Text("حذف البيت نهائياً؟") },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("ينمسح كل شي: الأعضاء، المهام، النقاط، السجل، والأمنيات. كل الجوالات تطلع من البيت، وتنشال حماية الحذف عنها. ما في تراجع. نزّلي السجل قبل إذا تحتاجينه.")
+                                Text("للتأكيد اكتبي كود البيت: $code")
+                                OutlinedTextField(typed, { typed = it.uppercase().trim() }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(enabled = typed == code, onClick = {
+                                confirmDelete = false
+                                act { repo.deleteHouse(code, house.alias); ctx.toast("انحذف البيت") }
+                            }) { Text("حذف", color = MaterialTheme.colorScheme.error) }
+                        },
+                        dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("إلغاء") } },
+                    )
+                }
+
                 OutlinedButton(onClick = { confirmReset = true }, modifier = Modifier.fillMaxWidth()) { Text("إرجاع الجدول الأصلي") }
                 if (confirmReset) {
                     AlertDialog(
