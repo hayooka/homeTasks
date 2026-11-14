@@ -72,7 +72,7 @@ class Repo {
             house(code),
             mapOf(
                 "name" to name, "grace" to 30, "startDate" to LocalDate.now().toString(),
-                "penalties" to DEFAULT_PENALTIES, "owner" to (auth.uid ?: ""), "seedVersion" to SEED_VERSION,
+                "penalties" to DEFAULT_PENALTIES, "owner" to (auth.uid ?: ""), "seedVersion" to SEED_VERSION, "prizeMax" to 15.0,
             ),
         )
         for (m in Seed.members) {
@@ -106,7 +106,7 @@ class Repo {
                         s.getString("name") ?: "", (s.getLong("grace") ?: 30L).toInt(), s.getString("startDate") ?: "", pen,
                         s.getString("aiKey") ?: "", s.getString("aiModel") ?: "",
                         s.getBoolean("enforce") ?: false, s.getString("enforceDate") ?: "", (s.getLong("enforceMin") ?: 0L).toInt(),
-                        (s.getLong("seedVersion") ?: 1L).toInt(), s.getString("uninstallHash") ?: "", s.getString("alias") ?: "", s.getDouble("prizeMax") ?: 20.0,
+                        (s.getLong("seedVersion") ?: 1L).toInt(), s.getString("uninstallHash") ?: "", s.getString("alias") ?: "", s.getDouble("prizeMax") ?: 15.0,
                     ),
                 )
             }

@@ -64,9 +64,24 @@ object Prize {
     /** النقاط اللي تعطي نص الجائزة الثاني كامل. */
     const val POINTS_GOAL = 2000.0
 
-    /** نص الجائزة على نسبة الالتزام، والنص الثاني على النقاط: كل ما جمع أكثر، الجائزة أكبر، لحد السقف. */
-    fun value(max: Double, pct: Double, points: Double): Double =
-        if (pct < MIN_PCT) 0.0 else minOf(max, max / 2 * pct + max / 2 * minOf(1.0, points / POINTS_GOAL))
+    /**
+     * السقف الكامل للي شارك الشهر كله. اللي بدأ نص الشهر سقفه نص، وهدف نقاطه نص.
+     * نص الجائزة على نسبة الالتزام، والنص الثاني على النقاط: كل ما جمع أكثر، الجائزة أكبر، لحد سقفه.
+     */
+    fun value(max: Double, pct: Double, points: Double, share: Double): Double {
+        if (pct < MIN_PCT || share <= 0) return 0.0
+        val cap = max * share
+        return minOf(cap, cap / 2 * pct + cap / 2 * minOf(1.0, points / (POINTS_GOAL * share)))
+    }
+
+    /** نسبة أيام الشهر اللي شارك فيها: من أول دخول (أو أول الشهر) لآخر الشهر. */
+    fun share(m: Member, from: LocalDate): Double {
+        if (m.joinDate.isEmpty()) return 0.0
+        val end = from.plusMonths(1).minusDays(1)
+        val start = maxOf(from, try { LocalDate.parse(m.joinDate) } catch (e: Exception) { from })
+        if (start.isAfter(end)) return 0.0
+        return (java.time.temporal.ChronoUnit.DAYS.between(start, end) + 1).toDouble() / from.lengthOfMonth()
+    }
 
     /** ترتيب الشهر بالنسبة. from و to (بدون to) حدود الشهر، و upTo آخر يوم ينحسب. */
     fun scores(
@@ -76,7 +91,7 @@ object Prize {
         val (got, could) = Rules.commitment(m, tasks, done, from, upTo, if (finished) 24 * 60 else nowMin, grace)
         val pts = done.filter { it.ok && it.memberId == m.id && it.date >= from.toString() && it.date <= upTo.toString() }.sumOf { it.points }
         val pct = if (could > 0) got / could else 0.0
-        MonthScore(m, pct, pts, value(max, pct, pts))
+        MonthScore(m, pct, pts, value(max, pct, pts, share(m, from)))
     }.sortedWith(compareByDescending<MonthScore> { it.pct }.thenByDescending { it.points })
 
     fun kd(x: Double) = String.format(java.util.Locale.US, "%.1f", x).removeSuffix(".0")

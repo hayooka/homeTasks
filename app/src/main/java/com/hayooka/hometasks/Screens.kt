@@ -342,7 +342,8 @@ fun RankPage(
                         fontWeight = FontWeight.Bold, color = GGold,
                     )
                     Text(
-                        "الفائز صاحب أعلى نسبة التزام بمهام البيت. الجائزة لحد ${Prize.kd(house.prizeMax)} د.ك: نصها على النسبة ونصها على النقاط، يعني كل ما جمعت نقاط أكثر زادت. " +
+                        "الفائز صاحب أعلى نسبة التزام بمهام البيت. الجائزة لحد ${Prize.kd(house.prizeMax)} د.ك للي شارك الشهر كامل، واللي بدأ متأخر سقفه حسب أيامه. " +
+                            "نصها على النسبة ونصها على النقاط، يعني كل ما جمعت نقاط أكثر زادت. " +
                             "تحت ${(Prize.MIN_PCT * 100).toInt()}% ما في جائزة. وإذا القائد طلع الأول، ما حد يفوز هالشهر.",
                         fontSize = 12.sp,
                     )
@@ -393,7 +394,7 @@ fun RankPage(
                     val mineScore = scores.firstOrNull { it.member.id == meId }
                     if (mineScore != null && !mine.leader) {
                         Text(
-                            if (mineScore.prize > 0) "لو فزت الآن، جائزتك ${Prize.kd(mineScore.prize)} د.ك. اكتب أمنية على قدها."
+                            if (mineScore.prize > 0) "لو فزت الآن، جائزتك ${Prize.kd(mineScore.prize)} د.ك من أقصى ${Prize.kd(house.prizeMax * Prize.share(mine, LocalDate.parse(monthStart)))} لأيامك. اكتب أمنية على قدها."
                             else "ارفع التزامك فوق ${(Prize.MIN_PCT * 100).toInt()}% عشان يصير لك جائزة.",
                             fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
