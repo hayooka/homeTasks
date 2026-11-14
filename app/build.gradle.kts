@@ -17,7 +17,7 @@ android {
     namespace = "com.hayooka.hometasks"
     compileSdk = 35
     defaultConfig {
-        applicationId = "com.hayooka.hometasks0"
+        applicationId = "com.hayooka.familytasks"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
