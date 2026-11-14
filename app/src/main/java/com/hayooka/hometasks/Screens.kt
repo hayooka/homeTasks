@@ -321,6 +321,18 @@ fun RankPage(
                     Column(Modifier.weight(1f)) {
                         Text(m.name + if (m.id == meId) " (أنت)" else "", fontWeight = FontWeight.Bold)
                         Text("المستوى ${Rules.level(m.total)}" + if (streak > 0) " · سلسلة $streak أيام" else "", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        // نسبة الالتزام هذا الشهر، والمبلغ إذا القائد حدد ميزانية
+                        if (period == "month") {
+                            val (got, could) = Rules.commitment(m, tasks, done, LocalDate.parse(monthStart), today, nowMin, house.grace)
+                            if (could > 0) {
+                                val pct = got / could
+                                Text(
+                                    "الالتزام ${(pct * 100).toInt()}%" +
+                                        if (house.budget > 0) " · ${String.format(java.util.Locale.US, "%.2f", pct * house.budget)} د.ك من ${Rules.pts(house.budget)}" else "",
+                                    fontSize = 13.sp, fontWeight = FontWeight.Bold, color = GNeon,
+                                )
+                            }
+                        }
                         // أمنية كل واحد تبان في ترتيب الشهر
                         if (period == "month" && m.wish.isNotBlank()) Text("أمنيته: ${m.wish}", fontSize = 12.sp, color = GGold)
                     }
@@ -677,6 +689,18 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                     "المهمة الفايتة الأولى = ساعة بدون إنترنت، الثانية = ساعتين، الثالثة = 3 ساعات، والرابعة = قفل الجوال لحد ما تنعمل كل المهام الفايتة. " +
                         "الحساب يبدأ من لحظة التشغيل، وكل شي يتصفّر آخر اليوم. إيقافه من هنا يفك أي قطع أو قفل فوراً. " +
                         "ما ينطبق على جوال القائد ولا على اللي تحت 10.",
+                    fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                HorizontalDivider()
+                Text("الميزانية الشهرية", fontWeight = FontWeight.Bold)
+                Stepper(
+                    "أقصى مبلغ للشخص", if (house.budget > 0) "${Rules.pts(house.budget)} د.ك" else "بدون",
+                    { act { repo.setBudget(code, (house.budget - 0.5).coerceAtLeast(0.0)) } },
+                    { act { repo.setBudget(code, (house.budget + 0.5).coerceAtMost(100.0)) } },
+                )
+                Text(
+                    "اللي يلتزم 100% بمهام البيت ياخذ المبلغ كامل، واللي أقل ياخذ بنسبته. النسبة والمبلغ يبانون للكل في الترتيب ← هذا الشهر.",
                     fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
