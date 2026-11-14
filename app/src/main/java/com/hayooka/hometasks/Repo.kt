@@ -106,7 +106,7 @@ class Repo {
                         s.getString("name") ?: "", (s.getLong("grace") ?: 30L).toInt(), s.getString("startDate") ?: "", pen,
                         s.getString("aiKey") ?: "", s.getString("aiModel") ?: "",
                         s.getBoolean("enforce") ?: false, s.getString("enforceDate") ?: "", (s.getLong("enforceMin") ?: 0L).toInt(),
-                        (s.getLong("seedVersion") ?: 1L).toInt(), s.getString("uninstallHash") ?: "", s.getString("alias") ?: "", s.getDouble("budget") ?: 0.0,
+                        (s.getLong("seedVersion") ?: 1L).toInt(), s.getString("uninstallHash") ?: "", s.getString("alias") ?: "",
                     ),
                 )
             }
@@ -309,10 +309,6 @@ class Repo {
             b.update(m.reference, mapOf("total" to 0.0, "streak" to 0, "streakDate" to "", "joinDate" to "", "joinMin" to 0))
         }
         b.commit().await()
-    }
-
-    suspend fun setBudget(code: String, amount: Double) {
-        house(code).update("budget", amount).await()
     }
 
     suspend fun setWish(code: String, memberId: String, wish: String) {

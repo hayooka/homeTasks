@@ -46,8 +46,6 @@ data class House(
     val uninstallHash: String,
     /** كود دخول يختاره القائد بدل الكود الأصلي. فاضي = ما في. */
     val alias: String,
-    /** أقصى مبلغ بالدينار ياخذه الشخص بالشهر لو التزم 100%. صفر = بدون مبالغ. */
-    val budget: Double,
 )
 
 fun secretHash(code: String, secret: String): String =
@@ -85,31 +83,6 @@ object Rules {
 
     fun level(total: Double): Int = (total / LEVEL_SIZE).toInt() + 1
     fun levelProgress(total: Double): Float = ((total % LEVEL_SIZE) / LEVEL_SIZE).toFloat()
-
-    /**
-     * التزام العضو بمهام البيت من تاريخ معيّن لحد الآن: (النقاط اللي أخذها، النقاط اللي كانت ممكنة).
-     * تنحسب بس المهام اللي عدّى موعدها أو انعملت، ومن بعد أول دخول له. المهام الشخصية والمكافآت خارج الحساب.
-     */
-    fun commitment(m: Member, tasks: List<Task>, done: List<Done>, from: LocalDate, today: LocalDate, nowMin: Int, grace: Int): Pair<Double, Double> {
-        val byKey = done.associateBy { it.date + "_" + it.taskId }
-        var earned = 0.0
-        var possible = 0.0
-        var d = from
-        while (!d.isAfter(today)) {
-            val date = d.toString()
-            for (t in tasks) {
-                if (t.memberId != m.id || t.personal || t.day != dayIndex(d)) continue
-                val limit = t.start + t.dur + grace
-                val dn = byKey[date + "_" + t.id]
-                val due = d.isBefore(today) || nowMin > limit
-                if (dn == null && !(due && m.accountable(date, limit))) continue
-                possible += t.points
-                if (dn != null && dn.ok) earned += minOf(dn.points, t.points.toDouble())
-            }
-            d = d.plusDays(1)
-        }
-        return earned to possible
-    }
 
     /** عرض النقاط: بدون كسور إلا إذا فيها نص نقطة. */
     fun pts(x: Double): String = if (x % 1.0 == 0.0) x.toLong().toString() else String.format(java.util.Locale.US, "%.1f", x)
