@@ -35,16 +35,17 @@ data class PenaltyState(val missed: Int, val overdue: List<Task>, val blockUntil
 
 object Penalty {
     /**
-     * المهمة تعتبر فايتة إذا عدّى آخر موعد + المهلة وما انعملت قبله.
-     * الفايتة الأولى = ساعة بدون إنترنت، الثانية = ساعتين، الثالثة = 3 ساعات،
-     * والرابعة = قفل الجوال لحد ما تنعمل كل المهام الفايتة. كل شي يتصفّر آخر اليوم.
+     * المهمة تعتبر فايتة إذا عدّى آخر موعد + المهلة وما انعملت قبله وما لها عذر.
+     * العواقب أخف: تنبيه، ثم عاقبتين نصيتين يحددهم ولي الأمر، ثم قطع إنترنت ساعة وحدة (لمن فوق 10 بس).
+     * ما في قفل للجوال ولا منع حذف. الكبار وولي الأمر بدون عواقب. كل شي يتصفّر آخر اليوم.
      */
     fun forMember(house: House, m: Member, tasks: List<Task>, done: List<Done>, date: LocalDate, nowMin: Int): PenaltyState {
-        if (!house.enforce) return PenaltyState.NONE
+        if (!house.enforce || m.leader || m.age == "adult") return PenaltyState.NONE
         val d = date.toString()
         if (house.enforceDate.isEmpty() || d < house.enforceDate) return PenaltyState.NONE
-        // يوم التفعيل: ما نحاسب على مواعيد عدّت قبل لحظة التفعيل
-        val floor = if (d == house.enforceDate) house.enforceMin else -1
+        // يوم التفعيل ما نحاسب على اللي قبل لحظة التفعيل، ولا على اللي لغاه ولي الأمر
+        var floor = if (d == house.enforceDate) house.enforceMin else -1
+        if (m.pardonDate == d) floor = maxOf(floor, m.pardonMin)
         val mineDone = done.filter { it.date == d && it.memberId == m.id }.associateBy { it.taskId }
         val missed = tasks.filter { it.memberId == m.id && it.day == Rules.dayIndex(date) && !it.personal }
             .map { it to (it.start + it.dur + house.grace) }
@@ -53,34 +54,36 @@ object Penalty {
                 deadline > floor && m.accountable(d, deadline) && nowMin > deadline && (dn == null || dn.at > deadline)
             }
             .sortedBy { it.second }
-        // تبقى "فايتة" لحد ما تنعمل والقائد يوافق عليها
         val overdue = missed.filter { mineDone[it.first.id]?.ok != true }.map { it.first }
         var until = 0
-        // الفايتة الأولى تنبيه بس، وبعدها: ساعة، ساعتين، 3 ساعات، ثم قفل
-        missed.drop(1).take(3).forEachIndexed { i, (_, deadline) ->
-            val end = minOf(deadline + (i + 1) * 60, 24 * 60)
-            if (nowMin < end) until = maxOf(until, end)
+        // الفايتة الرابعة: ساعة وحدة بدون إنترنت، مرة وحدة، ولمن فوق 10 بس
+        if (m.age == "u16" && missed.size >= 4) {
+            val end = minOf(missed[3].second + 60, 24 * 60)
+            if (nowMin < end) until = end
         }
-        return PenaltyState(missed.size, overdue, until, missed.size >= 5 && overdue.isNotEmpty())
+        return PenaltyState(missed.size, overdue, until, false)
     }
 
-    /** هل العقوبة تتنفذ فعلياً على جوال هذا الشخص؟ القائد والصغار (عقوبتهم التلفزيون) لا. */
-    fun enforcedOnPhone(m: Member) = !m.leader && m.age != "u10"
+    /** قطع الإنترنت ينطبق بس على من 10 إلى 17. */
+    fun enforcedOnPhone(m: Member) = !m.leader && m.age == "u16"
 
-    fun describe(st: PenaltyState, m: Member): String = when {
-        // سلّم أخف للصغار لأن مهامهم اليومية كثيرة: أول مهمتين تنبيه، وبعدها ساعة عن كل مهمتين
-        m.age == "u10" -> when {
-            st.missed >= 9 -> "ما في يوتيوب اليوم."
-            st.missed >= 7 -> "راحت عليك 3 ساعات يوتيوب."
-            st.missed >= 5 -> "راحت عليك ساعتين يوتيوب."
-            st.missed >= 3 -> "راحت عليك ساعة يوتيوب."
-            st.missed == 1 -> "تنبيه: فاتتك مهمة. ما في عقوبة لسا."
-            else -> "تنبيه ثاني. مهمة فايتة ثالثة تنقّص ساعة يوتيوب."
+    fun describe(st: PenaltyState, m: Member, house: House): String {
+        fun text(k: String) = house.penalties[k]?.takeIf { it.isNotBlank() } ?: DEFAULT_PENALTIES[k] ?: ""
+        return when {
+            st.missed <= 0 -> ""
+            // الصغار: تنبيهين، ثم عاقبة خفيفة، ثم أقوى
+            m.age == "u10" -> when {
+                st.missed >= 5 -> text("u10_heavy")
+                st.missed >= 3 -> text("u10_light")
+                else -> "تنبيه بس. لسا تقدر تخلص اللي فاتك."
+            }
+            st.missed == 1 -> "تنبيه بس. لسا تقدر تخلص اللي فاتك."
+            st.missed == 2 -> text("u16_light")
+            st.missed == 3 -> text("u16_heavy")
+            else -> text("u16_heavy") + " · " +
+                (if (st.block) "الإنترنت مقطوع لحد ${Rules.fmt(st.blockUntil)}" else "خلصت ساعة قطع الإنترنت") +
+                (if (st.missed >= 5) " · ولي الأمر يراجع الوضع" else "")
         }
-        st.lock -> "الجوال مقفول لحد ما تخلص كل المهام الفايتة."
-        st.block -> "الإنترنت مقطوع عن الجوال لحد ${Rules.fmt(st.blockUntil)}."
-        st.missed == 1 -> "تنبيه: فاتتك مهمة. الفايتة الجاية تقطع الإنترنت ساعة."
-        else -> "خلصت مدة القطع. أي مهمة فايتة ثانية تزيد العقوبة."
     }
 }
 
@@ -88,7 +91,7 @@ object Penalty {
 object Guard {
     val lock = mutableStateOf(false)
     val overdue = mutableStateOf<List<Task>>(emptyList())
-    /** مهام فايتة أشّر عليها العضو وتنتظر موافقة القائد. */
+    /** مهام فايتة أشّر عليها العضو وتنتظر موافقة ولي الأمر. */
     val pending = mutableStateOf<Set<String>>(emptySet())
     val member = mutableStateOf<Member?>(null)
     @Volatile var code: String? = null
@@ -204,7 +207,6 @@ class EnforcerService : Service() {
             Penalty.forMember(h, m, t, d, date, now.hour * 60 + now.minute)
         } else PenaltyState.NONE
         if (h != null && m != null && t != null && d != null) remind(h, m, t, d, date, now.hour * 60 + now.minute)
-        monthNotice(date, now.hour)
 
         if (st.block && Guard.vpnReady(this)) BlockVpnService.start(this) else if (BlockVpnService.running) BlockVpnService.stop(this)
 
@@ -218,7 +220,7 @@ class EnforcerService : Service() {
         }
 
         val ms = System.currentTimeMillis()
-        // نبلّغ القائد فوراً لما يتغير أي إذن، وكل 5 دقايق عشان يعرف إن الجوال متصل
+        // نبلّغ ولي الأمر فوراً لما يتغير أي إذن، وكل 5 دقايق عشان يعرف إن الجوال متصل
         val perms = listOf(
             Guard.vpnReady(this), Guard.overlayReady(this), Guard.adminReady(this),
             (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).areNotificationsEnabled(),
@@ -327,10 +329,10 @@ class BootReceiver : BroadcastReceiver() {
     }
 }
 
-/** حماية الحذف: طول ما هي مفعّلة النظام يرفض حذف التطبيق. إيقافها من إعدادات الجوال يبلّغ القائد فوراً. */
+/** حماية الحذف: طول ما هي مفعّلة النظام يرفض حذف التطبيق. إيقافها من إعدادات الجوال يبلّغ ولي الأمر فوراً. */
 class AdminReceiver : android.app.admin.DeviceAdminReceiver() {
     override fun onDisableRequested(context: Context, intent: Intent): CharSequence =
-        "إيقاف هذي الحماية يوصل تنبيه للقائد فوراً."
+        "إيقاف هذي الحماية يوصل تنبيه لولي الأمر فوراً."
 
     override fun onDisabled(context: Context, intent: Intent) {
         val prefs = context.getSharedPreferences("session", Context.MODE_PRIVATE)

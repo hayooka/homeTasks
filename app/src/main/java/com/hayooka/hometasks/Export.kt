@@ -5,7 +5,7 @@ import org.json.JSONObject
 import java.time.LocalDate
 
 /**
- * تصدير السجل للقائد: سطر لكل مهمة كانت على كل واحد بكل يوم، ومعها اللي صار فيها.
+ * تصدير السجل لولي الأمر: سطر لكل مهمة كانت على كل واحد بكل يوم، ومعها اللي صار فيها.
  * CSV يفتح في Excel، أو JSON.
  */
 object Export {
@@ -39,7 +39,8 @@ object Export {
                     val owner = members.firstOrNull { it.id == t.memberId }
                     if (d == null && (owner == null || !owner.accountable(date, limit))) continue
                     val result = when {
-                        d != null && !d.ok -> "تنتظر موافقة القائد"
+                        d != null && d.excused -> "معذور"
+                        d != null && !d.ok -> "تنتظر موافقة ولي الأمر"
                         d != null && !t.allDay && d.at > limit -> "متأخرة"
                         d != null -> "بوقتها"
                         date == today.toString() && (t.allDay || nowMin <= limit) -> "لسا بوقتها"
@@ -58,7 +59,7 @@ object Export {
                 out += listOf(
                     date, dayName(date), names[d.memberId] ?: d.memberId,
                     d.title.ifBlank { if (bonus) "مكافأة يوم كامل" else "مهمة" }, if (bonus) "مكافأة" else "بيت",
-                    "", if (!d.ok) "تنتظر موافقة القائد" else if (bonus) "مكافأة" else "انعملت",
+                    "", if (!d.ok) "تنتظر موافقة ولي الأمر" else if (bonus) "مكافأة" else "انعملت",
                     if (d.at >= 0) hm(d.at) else "", if (d.ok) Rules.pts(d.points) else "0", "",
                 )
             }

@@ -15,7 +15,12 @@ data class Member(
     val wish: String = "",
     /** أول دخول له بعد آخر تصفير: التاريخ والدقيقة من اليوم. فاضي = لسا ما دخل، وما ينحاسب على شي. */
     val joinDate: String = "", val joinMin: Int = 0,
+    /** النقاط اللي صرفها على مكافآت. رصيده = total - spent، والمستوى ما يتأثر بالصرف. */
+    val spent: Double = 0.0,
+    /** آخر مرة ولي الأمر لغى عواقب اليوم: التاريخ والدقيقة. اللي فات قبلها ما ينحسب. */
+    val pardonDate: String = "", val pardonMin: Int = 0,
 ) {
+    val balance get() = (total - spent).coerceAtLeast(0.0)
     /** هل ينحاسب على مهمة بهذا التاريخ موعدها النهائي limit؟ بس على اللي بعد أول دخول له. */
     fun accountable(date: String, limit: Int) = joinDate.isNotEmpty() && (date > joinDate || (date == joinDate && limit > joinMin))
 }
@@ -24,7 +29,7 @@ data class Member(
 data class Task(
     val id: String, val title: String, val memberId: String,
     val day: Int, val start: Int, val dur: Int, val points: Int,
-    /** personal: مهمة شخصية أضافها صاحبها. approved: القائد وافق على نقاطها. */
+    /** personal: مهمة شخصية أضافها صاحبها. approved: ولي الأمر وافق على نقاطها. */
     val personal: Boolean = false, val approved: Boolean = true,
 ) {
     /** بدون موعد: متاحة طول اليوم وما تتأخر. */
@@ -32,11 +37,13 @@ data class Task(
 }
 
 /** at: الدقيقة من اليوم اللي تأشّرت فيها المهمة، و-1 إذا مو معروفة. */
-/** ok: محسوبة. المهمة المتأخرة تبقى ok = false لحد ما القائد يوافق عليها. taskId = "streak" لمكافأة السلسلة. */
+/** ok: محسوبة. المهمة المتأخرة تبقى ok = false لحد ما ولي الأمر يوافق عليها. taskId = "streak" لمكافأة السلسلة. */
 data class Done(
     val taskId: String, val memberId: String, val date: String, val points: Double, val at: Int, val ok: Boolean,
     /** اسم المهمة وقت التأشير، عشان السجل يبقى صحيح حتى لو تغيرت أو انحذفت. */
     val title: String = "",
+    /** ولي الأمر قبل عذره: ما تنحسب فايتة وما تكسر السلسلة، وبدون نقاط. */
+    val excused: Boolean = false,
 )
 
 data class House(
@@ -46,11 +53,29 @@ data class House(
     val seedVersion: Int,
     /** بصمة كلمة السر اللي يحتاجها الأعضاء للخروج أو لإلغاء حماية الحذف. */
     val uninstallHash: String,
-    /** كود دخول يختاره القائد بدل الكود الأصلي. فاضي = ما في. */
+    /** كود دخول يختاره ولي الأمر بدل الكود الأصلي. فاضي = ما في. */
     val alias: String,
     /** أقصى قيمة لجائزة الشهر بالدينار. */
     val prizeMax: Double,
+    /** هدف العائلة المشترك: الاسم، النقاط المطلوبة، ومجموع نقاط العائلة وقت ما انحط. */
+    val goalTitle: String = "", val goalPoints: Double = 0.0, val goalBase: Double = 0.0,
 )
+
+/** مكافأة ينشئها ولي الأمر ويستبدلها الأفراد بنقاطهم. */
+data class Reward(val id: String, val title: String, val cost: Int)
+
+/** طلب استبدال ينتظر ولي الأمر يسلّمه. */
+data class Redeem(val id: String, val memberId: String, val title: String, val cost: Int, val date: String)
+
+/** مهام مقترحة حسب الفئة العمرية: (الاسم، النقاط). */
+object Suggest {
+    fun forAge(age: String): List<Pair<String, Int>> = when (age) {
+        "u10" -> listOf("ترتيب السرير" to 5, "ترتيب الألعاب" to 5, "سقي الزرع" to 5, "فرش السفرة" to 5, "تفريش الأسنان" to 5)
+        "u16" -> listOf("ترتيب الغرفة" to 8, "غسل الصحون" to 15, "تنزيل الزبالة" to 5, "طوي الغسيل" to 10, "كنس الصالة" to 10)
+        else -> listOf("الطبخ" to 30, "تنظيف المطبخ" to 20, "تنظيف الحمام" to 15, "المشتريات" to 15, "الغسيل" to 10)
+    }
+    val rewards = listOf("اختيار وجبة العشاء" to 100, "اختيار فيلم العائلة" to 150, "وقت لعب إضافي" to 80, "نشاط خاص مع ولي الأمر" to 200)
+}
 
 fun secretHash(code: String, secret: String): String =
     java.security.MessageDigest.getInstance("SHA-256").digest("$code:secret:$secret".toByteArray()).joinToString("") { "%02x".format(it) }
@@ -101,15 +126,14 @@ object Prize {
 
 val DAY_NAMES = listOf("الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت")
 val AGE_KEYS = listOf("u10", "u16", "adult")
-val AGE_NAMES = mapOf("u10" to "تحت 10", "u16" to "من 10 إلى 15", "adult" to "16 وفوق")
+val AGE_NAMES = mapOf("u10" to "تحت 10", "u16" to "من 10 إلى 17", "adult" to "18 وفوق")
 
+/** العواقب النصية اللي يحددها ولي الأمر: خفيفة وأقوى، للصغار ولمن فوق 10. */
 val DEFAULT_PENALTIES = mapOf(
-    "u10_light" to "وقت الشاشة اليوم أقل بنص ساعة",
-    "u10_heavy" to "ما في ألعاب ولا كرتون اليوم",
-    "u16_light" to "وقت الشاشة اليوم ساعة وحدة بس",
-    "u16_heavy" to "ما في واي فاي من الساعة 8 المسا",
-    "adult_light" to "مهمة إضافية اليوم",
-    "adult_heavy" to "مهمة إضافية وما في واي فاي من الساعة 9 المسا",
+    "u10_light" to "ربع ساعة أقل من وقت اللعب اليوم",
+    "u10_heavy" to "نص ساعة أقل من وقت الشاشة اليوم",
+    "u16_light" to "ما في ألعاب إلكترونية لمدة ساعة",
+    "u16_heavy" to "ما في ألعاب إلكترونية باقي اليوم",
 )
 
 object Rules {

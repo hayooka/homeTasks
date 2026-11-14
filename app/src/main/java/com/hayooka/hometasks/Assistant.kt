@@ -15,7 +15,7 @@ import kotlinx.coroutines.launch
 
 private data class Bubble(val mine: Boolean, val text: String)
 
-/** محادثة مع المساعد لإضافة مهام بالكلام. المهام ما تنضاف إلا بعد ما القائد يضغط "إضافة". */
+/** محادثة مع المساعد لإضافة مهام بالكلام. المهام ما تنضاف إلا بعد ما ولي الأمر يضغط "إضافة". */
 @Composable
 fun AssistantTab(
     repo: Repo, code: String, house: House, members: List<Member>,

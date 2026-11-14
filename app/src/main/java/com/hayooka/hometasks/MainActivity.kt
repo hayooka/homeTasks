@@ -130,6 +130,7 @@ fun Welcome(repo: Repo, onCreated: (String) -> Unit, onJoined: (String) -> Unit)
     var mode by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var houseName by remember { mutableStateOf("بيتنا") }
+    var myName by remember { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }
     var joinCode by remember { mutableStateOf("") }
 
@@ -148,7 +149,7 @@ fun Welcome(repo: Repo, onCreated: (String) -> Unit, onJoined: (String) -> Unit)
         when (mode) {
             "" -> {
                 Button(onClick = { mode = "join" }, modifier = Modifier.fillMaxWidth()) { Text("دخول بكود البيت") }
-                OutlinedButton(onClick = { mode = "create" }, modifier = Modifier.fillMaxWidth()) { Text("إنشاء بيت جديد (للقائد)") }
+                OutlinedButton(onClick = { mode = "create" }, modifier = Modifier.fillMaxWidth()) { Text("إنشاء بيت جديد (لولي الأمر)") }
             }
             "join" -> {
                 OutlinedTextField(
@@ -172,14 +173,15 @@ fun Welcome(repo: Repo, onCreated: (String) -> Unit, onJoined: (String) -> Unit)
             }
             else -> {
                 OutlinedTextField(houseName, { houseName = it.take(30) }, label = { Text("اسم البيت") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(myName, { myName = it.take(20) }, label = { Text("اسمك") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 PinField(pin, { pin = it }, "رقمك السري (4 أرقام)")
-                Text("ينشأ البيت جاهز بأعضاء العائلة وجدول الأسبوع، وأنتِ القائد.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("البيت يبدأ فاضي. بعدها تضيف أفراد العائلة وأعمارهم والمهام من صفحة الإدارة.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Button(
-                    enabled = !busy && pin.length == 4 && houseName.isNotBlank(), modifier = Modifier.fillMaxWidth(),
+                    enabled = !busy && pin.length == 4 && houseName.isNotBlank() && myName.isNotBlank(), modifier = Modifier.fillMaxWidth(),
                     onClick = {
                         busy = true
                         scope.launch {
-                            try { onCreated(repo.createHouse(houseName.trim(), pin)) } catch (e: Exception) { ctx.toast("ما قدرنا ننشئ البيت") }
+                            try { onCreated(repo.createHouse(houseName.trim(), myName.trim(), pin)) } catch (e: Exception) { ctx.toast("ما قدرنا ننشئ البيت") }
                             busy = false
                         }
                     },

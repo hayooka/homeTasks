@@ -66,7 +66,7 @@ fun Home(repo: Repo, code: String, meId: String, onLogout: () -> Unit) {
             try {
                 if (d != null) repo.undo(code, t, date, d)
                 else {
-                    // المتأخرة تنتظر موافقة القائد (إلا مهام القائد نفسها)
+                    // المتأخرة تنتظر موافقة ولي الأمر (إلا مهام ولي الأمر نفسها)
                     val late = Rules.isLate(t, nowMin, house.grace)
                     var pts = Rules.pointsNow(t, nowMin, house.grace).toDouble()
                     if (t.personal) {
@@ -75,7 +75,7 @@ fun Home(repo: Repo, code: String, meId: String, onLogout: () -> Unit) {
                         val got = done.filter { it.date == date && it.memberId == me.id && it.ok && it.taskId in ids }.sumOf { it.points }
                         pts = minOf(pts, (Personal.MAX_DAY - got).coerceAtLeast(0.0))
                     }
-                    // المتأخرة والشخصية اللي لسا ما انوافق على نقاطها تنتظر القائد
+                    // المتأخرة والشخصية اللي لسا ما انوافق على نقاطها تنتظر ولي الأمر
                     repo.complete(code, t, date, pts, nowMin, (!late || me.leader) && (!t.personal || t.approved))
                     if (!late) {
                         val mine = tasks.filter { it.memberId == me.id && it.day == Rules.dayIndex(today) }
@@ -109,7 +109,7 @@ fun Home(repo: Repo, code: String, meId: String, onLogout: () -> Unit) {
         if (me.leader && house.seedVersion < SEED_VERSION) try { repo.migrateSeed(code, house.seedVersion) } catch (e: Exception) { }
     }
 
-    // إذا القائد حذف البيت، الكل يطلع منه
+    // إذا ولي الأمر حذف البيت، الكل يطلع منه
     LaunchedEffect(code) { repo.houseGoneFlow(code).collect { if (it) onLogout() } }
 
     val pages = if (me.leader) listOf("مهامي", "الترتيب", "الإدارة") else listOf("مهامي", "الترتيب")
@@ -198,25 +198,12 @@ fun TodayPage(
         }
         if (past) Text("هذا عرض ليوم سابق، للمتابعة بس.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-        // تنبيه نهاية الشهر وبداية الشهر الجديد
-        val monthEnd = today.withDayOfMonth(today.lengthOfMonth())
-        val daysToEnd = monthEnd.dayOfMonth - today.dayOfMonth
-        if (!past && (daysToEnd <= 3 || today.dayOfMonth <= 3)) {
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
-                Text(
-                    if (daysToEnd <= 3) (if (daysToEnd == 0) "آخر يوم بمسابقة ${MONTH_NAMES[today.monthValue - 1]}! تنتهي الليلة." else "باقي $daysToEnd أيام على نهاية مسابقة ${MONTH_NAMES[today.monthValue - 1]}.")
-                    else "بدأت مسابقة ${MONTH_NAMES[today.monthValue - 1]}! شوف نتيجة الشهر اللي فات في الترتيب ← مسابقة الشهر.",
-                    Modifier.padding(12.dp), fontWeight = FontWeight.Bold,
-                )
-            }
-        }
-
         if (!past && house.enforce && Penalty.enforcedOnPhone(me)) GuardSetupCard()
         if (!past && st.missed > 0) {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
                     Text("عقوبة: فاتتك ${st.missed} مهام اليوم", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
-                    Text(Penalty.describe(st, me), color = MaterialTheme.colorScheme.onErrorContainer)
+                    Text(Penalty.describe(st, me, house), color = MaterialTheme.colorScheme.onErrorContainer)
                     if (me.leader) Text("عندك تنعرض بس، بدون قطع أو قفل.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onErrorContainer)
                 }
             }
@@ -231,7 +218,7 @@ fun TodayPage(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("مهامي الشخصية", fontWeight = FontWeight.Bold)
-                Text("أنت تضيفها وتعدلها. بدون عقوبة، والنقاط بعد موافقة القائد.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("أنت تضيفها وتعدلها. بدون عقوبة، والنقاط بعد موافقة ولي الأمر.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (!past) OutlinedButton(onClick = { adding = true }) { Text("إضافة") }
         }
@@ -247,7 +234,7 @@ fun TodayPage(
                 adding = false
                 scope.launch {
                     try {
-                        // الاقتراحات الجاهزة موافق عليها بنقاطها، وغيرها يقدّرها المساعد وتنتظر القائد
+                        // الاقتراحات الجاهزة موافق عليها بنقاطها، وغيرها يقدّرها المساعد وتنتظر ولي الأمر
                         val sug = Personal.suggestions.firstOrNull { it.title == title }
                         val key = house.aiKey.ifBlank { BuildConfig.GEMINI_KEY }
                         val points = sug?.points ?: if (key.isBlank()) 5 else try {
@@ -296,10 +283,11 @@ private fun TaskRow(t: Task, d: Done?, nowMin: Int, grace: Int, onToggle: (Task,
                 if (onEdit != null) TextButton(onClick = onEdit, contentPadding = PaddingValues(0.dp)) { Text("تعديل", fontSize = 12.sp) }
             }
             val label = when {
-                d != null && !d.ok -> "بانتظار موافقة القائد"
+                d != null && d.excused -> "معذور"
+                d != null && !d.ok -> "بانتظار موافقة ولي الأمر"
                 d != null -> "تم +${Rules.pts(d.points)}"
                 past -> "ما انعملت"
-                t.personal && !t.approved -> "مقترح ${t.points} · ينتظر القائد"
+                t.personal && !t.approved -> "مقترح ${t.points} · ينتظر ولي الأمر"
                 late -> "متأخر · ${Rules.pointsNow(t, nowMin, grace)} من ${t.points}"
                 else -> "${t.points} نقطة"
             }
@@ -316,17 +304,20 @@ fun RankPage(
     house: House, tasks: List<Task>, today: LocalDate, nowMin: Int, onLogout: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    val ctxR = LocalContext.current
     var period by remember { mutableStateOf("week") }
-    val month = LocalDate.parse(monthStart)
-    val monthEnd = month.plusMonths(1).minusDays(1)
-    val daysLeft = java.time.temporal.ChronoUnit.DAYS.between(today, monthEnd).toInt()
+    val rewards by remember(code) { repo.rewardsFlow(code) }.collectAsState(initial = emptyList())
+    val redeems by remember(code) { repo.redeemsFlow(code) }.collectAsState(initial = emptyList())
     val weekSums = done.filter { it.ok && it.date >= weekStart }.groupBy { it.memberId }.mapValues { e -> e.value.sumOf { it.points } }
-    val scores = Prize.scores(members, tasks, done, month, today, nowMin, house.grace, house.prizeMax, false)
-    val leaderTop = scores.firstOrNull()?.member?.leader == true
     val penalties = members.map { it to Penalty.forMember(house, it, tasks, done, today, nowMin) }.filter { it.second.missed > 0 }
+    val mine = members.firstOrNull { it.id == meId }
+    val parent = mine?.leader == true
+    val names = members.associate { it.id to it.name }
+    fun go(block: suspend () -> Unit) {
+        scope.launch { try { block() } catch (x: Exception) { ctxR.toast("ما انحفظ، تأكد من الإنترنت") } }
+    }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("الترتيب", fontSize = 22.sp, fontWeight = FontWeight.Black)
-        Chips(listOf("week" to "هذا الأسبوع", "month" to "مسابقة الشهر"), period) { period = it }
+        Chips(listOf("week" to "ترتيب الأسبوع", "rewards" to "المكافآت وهدف العائلة"), period) { period = it }
 
         if (period == "week") {
             val weekEnd = LocalDate.parse(weekStart).plusDays(6)
@@ -337,86 +328,102 @@ fun RankPage(
             }
             Text("ترتيب الأسبوع بالنقاط، ويبدأ من جديد كل يوم أحد. المستوى يضل معك.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
-            // عنوان المسابقة والتاريخ
+            // ---- هدف العائلة: الكل يجمع له مع بعض
+            val familyTotal = members.sumOf { it.total }
+            val progress = (familyTotal - house.goalBase).coerceAtLeast(0.0)
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("مسابقة ${MONTH_NAMES[month.monthValue - 1]} ${month.year}", fontSize = 20.sp, fontWeight = FontWeight.Black)
-                    Text(
-                        if (daysLeft == 0) "آخر يوم! تنتهي الليلة الساعة 12" else "باقي $daysLeft يوم · تنتهي ${monthEnd.dayOfMonth} ${MONTH_NAMES[monthEnd.monthValue - 1]} الساعة 12 بالليل",
-                        fontWeight = FontWeight.Bold, color = GGold,
-                    )
-                    Text(
-                        "الفائز صاحب أعلى نسبة التزام بمهام البيت. الجائزة لحد ${Prize.kd(house.prizeMax)} د.ك للي شارك الشهر كامل، واللي بدأ متأخر سقفه حسب أيامه. " +
-                            "نصها على النسبة ونصها على النقاط، يعني كل ما جمعت نقاط أكثر زادت. " +
-                            "تحت ${(Prize.MIN_PCT * 100).toInt()}% ما في جائزة. وإذا القائد طلع الأول، ما حد يفوز هالشهر.",
-                        fontSize = 12.sp,
-                    )
-                }
-            }
-            scores.forEachIndexed { i, sc ->
-                val first = i == 0 && sc.pct > 0
-                RankRow(
-                    i, sc.member, meId, today, first, "${(sc.pct * 100).toInt()}%",
-                    buildString {
-                        append("${Rules.pts(sc.points)} نقطة")
-                        if (!sc.member.leader) append(if (sc.prize > 0) " · جائزته لو فاز: ${Prize.kd(sc.prize)} د.ك" else " · تحت ${(Prize.MIN_PCT * 100).toInt()}%، بدون جائزة")
-                        if (sc.member.wish.isNotBlank()) append("\nأمنيته: ${sc.member.wish}")
-                    },
-                )
-            }
-            if (leaderTop) Text("القائد بالمركز الأول حالياً، فما في جائزة لأحد لو ضل هيك!", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = GHot)
-
-            // نتيجة الشهر اللي فات
-            val prev = month.minusMonths(1)
-            val prevScores = Prize.scores(members, tasks, done, prev, month.minusDays(1), 0, house.grace, house.prizeMax, true).filter { it.pct > 0 }
-            if (prevScores.isNotEmpty()) {
-                val w = prevScores.first()
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(12.dp)) {
-                        Text("نتيجة ${MONTH_NAMES[prev.monthValue - 1]}", fontWeight = FontWeight.Bold)
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("هدف العائلة", fontWeight = FontWeight.Bold, color = GGold)
+                    if (house.goalPoints <= 0) {
+                        Text(if (parent) "حط هدف مشترك تجمع له العائلة كلها." else "ولي الأمر لسا ما حط هدف.")
+                    } else {
+                        Text(house.goalTitle, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                        XpBar((progress / house.goalPoints).toFloat(), Modifier.fillMaxWidth())
                         Text(
-                            when {
-                                w.member.leader -> "القائد طلع الأول بـ ${(w.pct * 100).toInt()}%، فما حد فاز."
-                                w.prize <= 0 -> "${w.member.name} طلع الأول بـ ${(w.pct * 100).toInt()}%، بس تحت الحد، فما في جائزة."
-                                else -> "${w.member.name} فاز بـ ${(w.pct * 100).toInt()}% وجائزته ${Prize.kd(w.prize)} د.ك"
-                            },
-                            color = GGold,
+                            if (progress >= house.goalPoints) "وصلتوا الهدف! مبروك للعائلة كلها."
+                            else "${Rules.pts(progress)} من ${Rules.pts(house.goalPoints)} نقطة · كل مهمة يخلصها أي واحد تقرّب الكل",
+                            fontWeight = FontWeight.Medium,
                         )
+                    }
+                    if (parent) {
+                        var gTitle by remember { mutableStateOf("") }
+                        var gPoints by remember { mutableStateOf("500") }
+                        OutlinedTextField(gTitle, { gTitle = it.take(40) }, label = { Text("هدف جديد، مثلاً: يوم نشاط عائلي") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(
+                            gPoints, { v -> gPoints = v.filter { it.isDigit() }.take(5) }, label = { Text("كم نقطة") }, singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth(),
+                        )
+                        Button(
+                            enabled = gTitle.isNotBlank() && (gPoints.toIntOrNull() ?: 0) > 0,
+                            onClick = { val t = gTitle.trim(); val p = gPoints.toDouble(); gTitle = ""; go { repo.setGoal(code, t, p, familyTotal) } },
+                        ) { Text("بدء الهدف من الآن") }
                     }
                 }
             }
-        }
 
-        // صندوق الأمنية
-        val mine = members.firstOrNull { it.id == meId }
-        if (mine != null) {
-            var wish by remember(mine.wish) { mutableStateOf(mine.wish) }
-            val ctxWish = LocalContext.current
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("أمنيتي إذا طلعت الأول هذا الشهر", fontWeight = FontWeight.Bold, color = GGold)
-                    val mineScore = scores.firstOrNull { it.member.id == meId }
-                    if (mineScore != null && !mine.leader) {
-                        Text(
-                            if (mineScore.prize > 0) "لو فزت الآن، جائزتك ${Prize.kd(mineScore.prize)} د.ك من أقصى ${Prize.kd(house.prizeMax * Prize.share(mine, LocalDate.parse(monthStart)))} لأيامك. اكتب أمنية على قدها."
-                            else "ارفع التزامك فوق ${(Prize.MIN_PCT * 100).toInt()}% عشان يصير لك جائزة.",
-                            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+            // ---- المكافآت الفردية
+            if (mine != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("المكافآت", Modifier.weight(1f), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Pill("رصيدي ${Rules.pts(mine.balance)}", GGold)
+                }
+                Text("تستبدلها بنقاطك. الاستبدال ما ينقّص مستواك.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (rewards.isEmpty()) Text(if (parent) "ما في مكافآت لسا. أضف وحدة من تحت." else "ولي الأمر لسا ما أضاف مكافآت.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                for (r in rewards.sortedBy { it.cost }) {
+                    Card(Modifier.fillMaxWidth()) {
+                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Column(Modifier.weight(1f)) {
+                                Text(r.title, fontWeight = FontWeight.Medium)
+                                Text("${r.cost} نقطة", fontSize = 12.sp, color = GGold)
+                            }
+                            if (parent) TextButton(onClick = { go { repo.deleteReward(code, r.id) } }) { Text("حذف", color = MaterialTheme.colorScheme.error) }
+                            Button(enabled = mine.balance >= r.cost, onClick = { go { repo.redeem(code, meId, r, today.toString()); ctxR.toast("انطلبت المكافأة") } }) { Text("استبدال") }
+                        }
                     }
-                    OutlinedTextField(wish, { wish = it.take(80) }, placeholder = { Text("اكتب اللي تبغاه…") }, modifier = Modifier.fillMaxWidth(), maxLines = 2)
+                }
+
+                // طلبات الاستبدال: ولي الأمر يشوف الكل، والباقي يشوفون طلباتهم
+                val shown = if (parent) redeems else redeems.filter { it.memberId == meId }
+                if (shown.isNotEmpty()) Text(if (parent) "طلبات تنتظر التسليم" else "طلباتي", fontWeight = FontWeight.Bold)
+                for (q in shown) {
+                    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("${names[q.memberId] ?: ""} · ${q.title}", fontWeight = FontWeight.Medium)
+                            Text("${q.cost} نقطة · ${q.date}", fontSize = 12.sp)
+                            if (parent) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(onClick = { go { repo.closeRedeem(code, q, false) } }) { Text("تم التسليم") }
+                                    OutlinedButton(onClick = { go { repo.closeRedeem(code, q, true) } }) { Text("رفض وإرجاع النقاط") }
+                                }
+                            } else Text("بانتظار ولي الأمر", fontSize = 12.sp, color = GGold)
+                        }
+                    }
+                }
+
+                if (parent) {
+                    var rTitle by remember { mutableStateOf("") }
+                    var rCost by remember { mutableStateOf("100") }
+                    HorizontalDivider()
+                    Text("مكافأة جديدة", fontWeight = FontWeight.Bold)
+                    Chips(Suggest.rewards.map { it.first to it.first }, rTitle) { picked ->
+                        rTitle = picked
+                        rCost = Suggest.rewards.first { it.first == picked }.second.toString()
+                    }
+                    OutlinedTextField(rTitle, { rTitle = it.take(40) }, label = { Text("اسم المكافأة") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(
+                        rCost, { v -> rCost = v.filter { it.isDigit() }.take(5) }, label = { Text("سعرها بالنقاط") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth(),
+                    )
                     Button(
-                        enabled = wish.trim() != mine.wish,
-                        onClick = {
-                            val v = wish.trim()
-                            scope.launch { try { repo.setWish(code, meId, v); ctxWish.toast("انحفظت أمنيتك") } catch (x: Exception) { ctxWish.toast("ما انحفظت، تأكد من الإنترنت") } }
-                        },
-                    ) { Text("حفظ الأمنية") }
+                        enabled = rTitle.isNotBlank() && (rCost.toIntOrNull() ?: 0) > 0,
+                        onClick = { val t = rTitle.trim(); val c = rCost.toInt(); rTitle = ""; go { repo.addReward(code, t, c) } },
+                    ) { Text("إضافة المكافأة") }
                 }
             }
         }
 
         HorizontalDivider()
-        Text("عقوبات اليوم", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text("عواقب اليوم", fontSize = 20.sp, fontWeight = FontWeight.Bold)
         if (!house.enforce) {
             Text("العقوبات متوقفة حالياً.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else if (penalties.isEmpty()) {
@@ -426,11 +433,11 @@ fun RankPage(
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
                 Column(Modifier.padding(12.dp)) {
                     Text("${m.name} · فاتته ${st.missed} مهام", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
-                    Text(Penalty.describe(st, m), color = MaterialTheme.colorScheme.onErrorContainer)
+                    Text(Penalty.describe(st, m, house), color = MaterialTheme.colorScheme.onErrorContainer)
                 }
             }
         }
-        // وقت تنفيذ العقوبات، الخروج وإلغاء حماية الحذف يحتاجون كلمة السر اللي حطها القائد
+        // وقت تنفيذ العقوبات، الخروج وإلغاء حماية الحذف يحتاجون كلمة السر اللي حطها ولي الأمر
         val ctx = LocalContext.current
         val me = members.firstOrNull { it.id == meId }
         val guarded = house.enforce && me != null && Penalty.enforcedOnPhone(me)
@@ -455,7 +462,7 @@ fun RankPage(
                 title = { Text(if (ask == "logout") "تسجيل الخروج" else "إلغاء حماية الحذف") },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("اكتب كلمة السر اللي عند القائد.")
+                        Text("اكتب كلمة السر اللي عند ولي الأمر.")
                         OutlinedTextField(pwd, { pwd = it.take(30) }, label = { Text("كلمة السر") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     }
                 },
@@ -465,7 +472,7 @@ fun RankPage(
                             val what = ask
                             ask = ""
                             if (what == "logout") onLogout() else { Guard.removeAdmin(ctx); ctx.toast("انلغت حماية الحذف") }
-                        } else ctx.toast(if (house.uninstallHash.isEmpty()) "القائد لسا ما حط كلمة سر" else "كلمة السر غلط")
+                        } else ctx.toast(if (house.uninstallHash.isEmpty()) "ولي الأمر لسا ما حط كلمة سر" else "كلمة السر غلط")
                     }) { Text("تأكيد") }
                 },
                 dismissButton = { TextButton(onClick = { ask = "" }) { Text("إلغاء") } },
@@ -474,7 +481,7 @@ fun RankPage(
     }
 }
 
-// ---------------- الإدارة (للقائد) ----------------
+// ---------------- الإدارة (لولي الأمر) ----------------
 
 @Composable
 fun Stepper(label: String, value: String, onMinus: () -> Unit, onPlus: () -> Unit) {
@@ -524,7 +531,7 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                 val titles = tasks.associate { it.id to it.title }
                 val muted = MaterialTheme.colorScheme.onSurfaceVariant
 
-                // المهام المتأخرة تنتظر موافقة القائد قبل ما تنحسب
+                // المهام المتأخرة تنتظر موافقة ولي الأمر قبل ما تنحسب
                 val fresh = tasks.filter { it.personal && !it.approved }
                 val freshIds = fresh.map { it.id }.toSet()
                 val pending = done.filter { it.date == date && !it.ok && it.taskId !in freshIds }
@@ -576,7 +583,10 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                             }
                             LinearProgressIndicator(progress = { if (mine.isEmpty()) 0f else okCount / mine.size.toFloat() }, modifier = Modifier.fillMaxWidth())
                             val st = Penalty.forMember(house, m, tasks, done, today, nowMin)
-                            if (st.missed > 0) Text("فاتته ${st.missed} · ${Penalty.describe(st, m)}", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                            if (st.missed > 0) {
+                                Text("فاتته ${st.missed} · ${Penalty.describe(st, m, house)}", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                                TextButton(onClick = { act { repo.pardon(code, m.id, date, nowMin); ctx.toast("انلغت عواقب اليوم عن ${m.name}") } }) { Text("إلغاء عواقب اليوم") }
+                            }
                             if (!m.leader) PermissionStatus(m, Penalty.enforcedOnPhone(m))
                             val streak = Rules.streakNow(m, today)
                             if (streak > 0) Text("سلسلة $streak أيام", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
@@ -592,7 +602,7 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                                             onCheckedChange = {
                                                 if (d != null) act { repo.undo(code, t, date, d) }
                                                 else act {
-                                                    // تأشير القائد عن العضو: تنحسب بوقتها وبنقاطها كاملة
+                                                    // تأشير ولي الأمر عن العضو: تنحسب بوقتها وبنقاطها كاملة
                                                     repo.complete(code, t, date, t.points.toDouble(), minOf(nowMin, t.start + t.dur), true)
                                                     if (Rules.allOnTime(mine, dm.values.toList(), t.id, house.grace)) repo.awardStreak(code, m, today)
                                                 }
@@ -601,11 +611,12 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                                         Column(Modifier.weight(1f)) {
                                             Text(t.title)
                                             Text(
-                                                "آخر موعد ${Rules.fmt(t.start + t.dur)}" + if (d != null && !d.ok) " · بانتظار الموافقة" else "",
+                                                "آخر موعد ${Rules.fmt(t.start + t.dur)}" + if (d != null && d.excused) " · معذور" else if (d != null && !d.ok) " · بانتظار الموافقة" else "",
                                                 fontSize = 12.sp, color = muted,
                                             )
                                         }
                                         if (t.personal) TextButton(onClick = { personalEdit = m to t }) { Text("تعديل", fontSize = 12.sp) }
+                                        if (d == null && !t.personal) TextButton(onClick = { act { repo.excuse(code, t, date) } }) { Text("عذر", fontSize = 12.sp) }
                                         Text("${t.points}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                                     }
                                 }
@@ -623,7 +634,7 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                         onAdd = { title, days, start, dur ->
                             personalFor = null
                             act {
-                                // إضافة القائد موافق عليها مباشرة؛ النقاط من الاقتراح الجاهز أو من تقدير المساعد
+                                // إضافة ولي الأمر موافق عليها مباشرة؛ النقاط من الاقتراح الجاهز أو من تقدير المساعد
                                 val sug = Personal.suggestions.firstOrNull { it.title == title }
                                 val key = house.aiKey.ifBlank { BuildConfig.GEMINI_KEY }
                                 val points = sug?.points ?: if (key.isBlank()) 5 else try {
@@ -647,7 +658,7 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                 for (m in members) {
                     Card(Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(m.name + if (m.leader) " (قائد)" else "", fontWeight = FontWeight.Bold)
+                            Text(m.name + if (m.leader) " (ولي أمر)" else "", fontWeight = FontWeight.Bold)
                             Chips(ages, m.age) { a -> act { repo.setAge(code, m.id, a) } }
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 if (!m.leader) {
@@ -720,7 +731,7 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                 HorizontalDivider()
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("تنفيذ العقوبات على الجوالات", fontWeight = FontWeight.Bold)
+                        Text("تفعيل العواقب", fontWeight = FontWeight.Bold)
                         Text(if (house.enforce) "شغال" else "متوقف", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Switch(
@@ -732,19 +743,23 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                     )
                 }
                 Text(
-                    "المهمة الفايتة الأولى تنبيه بس. الثانية = ساعة بدون إنترنت، الثالثة = ساعتين، الرابعة = 3 ساعات، والخامسة = قفل الجوال لحد ما تنعمل كل المهام الفايتة. " +
-                        "اللي تحت 10: تنبيه أول، وبعدها عقوبة يوتيوب تزيد كل مهمتين. " +
-                        "الحساب يبدأ من لحظة التشغيل، وكل شي يتصفّر آخر اليوم. إيقافه من هنا يفك أي قطع أو قفل فوراً. " +
-                        "ما ينطبق على جوال القائد ولا على اللي تحت 10.",
+                    "لمن عمره 10 إلى 17: الفايتة الأولى تنبيه، الثانية عاقبة خفيفة، الثالثة عاقبة أقوى، والرابعة قطع إنترنت ساعة وحدة. " +
+                        "تحت 10: تنبيهين، ثم عاقبة خفيفة، ثم أقوى، بدون أي تحكم بالجوال. الكبار بدون عواقب. " +
+                        "ما في قفل للجوال ولا منع حذف. تقدر تقبل عذر أي مهمة أو تلغي عواقب اليوم لأي فرد من تبويب اليوم. كل شي يتصفّر آخر اليوم.",
                     fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
                 HorizontalDivider()
-                Stepper(
-                    "أقصى جائزة للشهر", "${Prize.kd(house.prizeMax)} د.ك",
-                    { act { repo.setPrizeMax(code, (house.prizeMax - 1).coerceAtLeast(1.0)) } },
-                    { act { repo.setPrizeMax(code, (house.prizeMax + 1).coerceAtMost(200.0)) } },
-                )
+                var pen by remember(house.penalties) { mutableStateOf(DEFAULT_PENALTIES + house.penalties) }
+                Text("العواقب اللي تحددها أنت", fontWeight = FontWeight.Bold)
+                Text("الأفراد يشوفونها مكتوبة قبل، عشان يعرفون القواعد.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                for ((key, label) in listOf(
+                    "u16_light" to "10 إلى 17 · خفيفة (مهمتين فايتة)", "u16_heavy" to "10 إلى 17 · أقوى (3 فايتة)",
+                    "u10_light" to "تحت 10 · خفيفة (3 فايتة)", "u10_heavy" to "تحت 10 · أقوى (5 فايتة)",
+                )) {
+                    OutlinedTextField(pen[key] ?: "", { v -> pen = pen + (key to v.take(80)) }, label = { Text(label) }, modifier = Modifier.fillMaxWidth())
+                }
+                Button(onClick = { act { repo.saveSettings(code, house.grace, pen); ctx.toast("انحفظت العواقب") } }) { Text("حفظ العواقب") }
 
                 HorizontalDivider()
                 // تنزيل السجل كامل: يُجهّز النص ثم يُفتح اختيار مكان الحفظ
@@ -777,7 +792,7 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
 
                 HorizontalDivider()
                 var secret by remember { mutableStateOf("") }
-                Text("كلمة سر الحذف والخروج", fontWeight = FontWeight.Bold)
+                Text("كلمة سر تسجيل الخروج", fontWeight = FontWeight.Bold)
                 Text(
                     if (house.uninstallHash.isEmpty()) "ما في كلمة سر حالياً." else "في كلمة سر محفوظة. اكتبي وحدة جديدة لتغييرها.",
                     fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -833,7 +848,6 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                     )
                 }
 
-                OutlinedButton(onClick = { confirmReset = true }, modifier = Modifier.fillMaxWidth()) { Text("إرجاع الجدول الأصلي") }
                 if (confirmReset) {
                     AlertDialog(
                         onDismissRequest = { confirmReset = false },
@@ -860,6 +874,14 @@ fun TaskDialog(initial: Task, members: List<Member>, onSave: (Task) -> Unit, onD
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(t.title, { t = t.copy(title = it.take(60)) }, label = { Text("اسم المهمة") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Chips(members.map { it.id to it.name }, t.memberId) { t = t.copy(memberId = it) }
+                if (initial.id.isEmpty()) {
+                    val ideas = Suggest.forAge(members.firstOrNull { it.id == t.memberId }?.age ?: "adult")
+                    Text("مهام مناسبة لعمره", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Chips(ideas.map { it.first to it.first }, t.title) { picked ->
+                        t = t.copy(title = picked)
+                        pts = ideas.first { it.first == picked }.second.toString()
+                    }
+                }
                 Chips(DAY_NAMES.mapIndexed { i, n -> i.toString() to n }, t.day.toString()) { t = t.copy(day = it.toInt()) }
                 // البداية تتحرك وآخر موعد يبقى ثابت، وآخر موعد يتحرك والبداية تبقى ثابتة
                 val deadline = t.start + t.dur
@@ -903,33 +925,16 @@ fun GuardSetupCard() {
     val vpnOk = remember(refresh) { Guard.vpnReady(ctx) }
     val overlayOk = remember(refresh) { Guard.overlayReady(ctx) }
     val adminOk = remember(refresh) { Guard.adminReady(ctx) }
-    if (vpnOk && overlayOk && adminOk) return
+    if (vpnOk) return
 
     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("فعّل العقوبات على جوالك", fontWeight = FontWeight.Bold)
-            Text("البيت متفق إن المهام الفايتة لها عقوبة: قطع الإنترنت أو قفل الجوال. التطبيق يحتاج ثلاث أذونات عشان ينفذها.", fontSize = 13.sp)
+            Text("إذن واحد مطلوب", fontWeight = FontWeight.Bold)
+            Text("العائلة متفقة: إذا فاتت 4 مهام بيوم واحد، ينقطع الإنترنت عن الجوال ساعة وحدة. المكالمات تبقى شغالة، وولي الأمر يقدر يلغيها.", fontSize = 13.sp)
             if (!vpnOk) Button(onClick = {
                 val i = android.net.VpnService.prepare(ctx)
                 if (i != null) vpnLauncher.launch(i) else refresh++
-            }) { Text("1. السماح بقطع الإنترنت") }
-            if (!overlayOk) Button(onClick = {
-                try {
-                    ctx.startActivity(
-                        android.content.Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:" + ctx.packageName))
-                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
-                    )
-                } catch (e: Exception) { ctx.toast("افتح الإعدادات ← التطبيقات ← مهام البيت ← الظهور فوق التطبيقات") }
-            }) { Text("2. السماح بشاشة القفل") }
-            if (!adminOk) Button(onClick = {
-                try {
-                    ctx.startActivity(
-                        android.content.Intent(android.app.admin.DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
-                            .putExtra(android.app.admin.DevicePolicyManager.EXTRA_DEVICE_ADMIN, android.content.ComponentName(ctx, AdminReceiver::class.java))
-                            .putExtra(android.app.admin.DevicePolicyManager.EXTRA_ADD_EXPLANATION, "يمنع حذف التطبيق بدون كلمة السر اللي عند القائد."),
-                    )
-                } catch (e: Exception) { ctx.toast("ما قدرنا نفتح صفحة الإذن") }
-            }) { Text("3. حماية التطبيق من الحذف") }
+            }) { Text("السماح") }
             if (android.os.Build.VERSION.SDK_INT >= 33) {
                 OutlinedButton(onClick = { notifLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) }) { Text("السماح بإشعارات التذكير") }
             }
@@ -949,7 +954,7 @@ private fun RankRow(i: Int, m: Member, meId: String, today: LocalDate, first: Bo
             Text("${i + 1}", fontSize = 22.sp, fontWeight = FontWeight.Black, modifier = Modifier.width(26.dp), textAlign = TextAlign.Center, color = if (first) GGold else MaterialTheme.colorScheme.onSurfaceVariant)
             if (m.character >= 0) CharacterView(m.character, Rules.level(m.total), Modifier.size(56.dp)) else Spacer(Modifier.size(56.dp))
             Column(Modifier.weight(1f)) {
-                Text(m.name + (if (m.id == meId) " (أنت)" else "") + (if (m.leader) " · القائد" else ""), fontWeight = FontWeight.Bold)
+                Text(m.name + (if (m.id == meId) " (أنت)" else "") + (if (m.leader) " · ولي الأمر" else ""), fontWeight = FontWeight.Bold)
                 Text("المستوى ${Rules.level(m.total)}" + if (streak > 0) " · سلسلة $streak أيام" else "", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (extra != null) Text(extra, fontSize = 12.sp, color = GGold)
             }
@@ -958,7 +963,7 @@ private fun RankRow(i: Int, m: Member, meId: String, today: LocalDate, first: Bo
     }
 }
 
-/** حالة أذونات جوال العضو، يشوفها القائد في الإدارة ← اليوم. */
+/** حالة أذونات جوال العضو، يشوفها ولي الأمر في الإدارة ← اليوم. */
 @Composable
 private fun PermissionStatus(m: Member, full: Boolean) {
     if (m.guardAt == 0L) {
@@ -968,8 +973,6 @@ private fun PermissionStatus(m: Member, full: Boolean) {
     val items = buildList {
         if (full) {
             add("الإنترنت" to m.vpnOk)
-            add("شاشة القفل" to m.overlayOk)
-            add("حماية الحذف" to m.adminOk)
         }
         add("الإشعارات" to m.notifOk)
     }

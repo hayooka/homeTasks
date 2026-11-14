@@ -55,7 +55,7 @@ class Repo {
      * مستند البيت نفسه يصير علامة "محذوف" بدون أي بيانات، فكوده ما يرجع يشتغل.
      */
     suspend fun deleteHouse(code: String, alias: String) {
-        for (sub in listOf("members", "tasks", "done", "days")) {
+        for (sub in listOf("members", "tasks", "done", "days", "rewards", "redeems")) {
             val refs = house(code).collection(sub).get().await().documents.map { it.reference }
             for (chunk in refs.chunked(400)) {
                 val b = db.batch()
@@ -67,7 +67,7 @@ class Repo {
         house(code).set(mapOf("deleted" to true)).await()
     }
 
-    /** يحوّل اللي انكتب في شاشة الدخول لكود البيت الحقيقي: إما هو نفسه، أو كود اختاره القائد. null = ما في بيت. */
+    /** يحوّل اللي انكتب في شاشة الدخول لكود البيت الحقيقي: إما هو نفسه، أو كود اختاره ولي الأمر. null = ما في بيت. */
     suspend fun resolveCode(input: String): String? {
         if (houseExists(input)) return input
         val real = db.collection("codes").document(input).get().await().getString("house") ?: return null
@@ -89,7 +89,7 @@ class Repo {
     }
 
     /** ينشئ البيت ويعبّيه بأعضاء العائلة وجدولها. يرجّع كود البيت. */
-    suspend fun createHouse(name: String, leaderPin: String): String {
+    suspend fun createHouse(name: String, leaderName: String, leaderPin: String): String {
         val alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
         val code = (1..6).map { alphabet.random() }.joinToString("")
         val batch = db.batch()
@@ -97,21 +97,68 @@ class Repo {
             house(code),
             mapOf(
                 "name" to name, "grace" to 30, "startDate" to LocalDate.now().toString(),
-                "penalties" to DEFAULT_PENALTIES, "owner" to (auth.uid ?: ""), "seedVersion" to SEED_VERSION, "prizeMax" to 15.0,
+                "penalties" to DEFAULT_PENALTIES, "owner" to (auth.uid ?: ""), "seedVersion" to SEED_VERSION,
             ),
         )
-        for (m in Seed.members) {
-            batch.set(
-                members(code).document(m.id),
-                mapOf(
-                    "name" to m.name, "age" to m.age, "character" to -1, "leader" to m.leader, "total" to 0L,
-                    "pinHash" to if (m.leader) pinHash(code, m.id, leaderPin) else "",
-                ),
-            )
-        }
-        for (t in Seed.tasks()) batch.set(tasks(code).document(), taskMap(t))
+        // البيت يبدأ فاضي: ولي الأمر بس، وهو يضيف أفراد العائلة والمهام
+        batch.set(
+            members(code).document("F"),
+            mapOf("name" to leaderName, "age" to "adult", "character" to -1, "leader" to true, "total" to 0.0, "pinHash" to pinHash(code, "F", leaderPin)),
+        )
         batch.commit().await()
         return code
+    }
+
+    // ---------- المكافآت وهدف العائلة ----------
+
+    fun rewardsFlow(code: String): Flow<List<Reward>> = house(code).collection("rewards").asFlow {
+        Reward(it.id, it.getString("title") ?: "", (it.getLong("cost") ?: 0L).toInt())
+    }
+
+    fun redeemsFlow(code: String): Flow<List<Redeem>> = house(code).collection("redeems").asFlow {
+        Redeem(it.id, it.getString("memberId") ?: "", it.getString("title") ?: "", (it.getLong("cost") ?: 0L).toInt(), it.getString("date") ?: "")
+    }
+
+    suspend fun addReward(code: String, title: String, cost: Int) {
+        house(code).collection("rewards").document().set(mapOf("title" to title, "cost" to cost)).await()
+    }
+
+    suspend fun deleteReward(code: String, id: String) {
+        house(code).collection("rewards").document(id).delete().await()
+    }
+
+    /** الفرد يستبدل مكافأة: تنخصم من رصيده وتنتظر ولي الأمر يسلّمها. */
+    suspend fun redeem(code: String, memberId: String, r: Reward, date: String) {
+        val b = db.batch()
+        b.set(house(code).collection("redeems").document(), mapOf("memberId" to memberId, "title" to r.title, "cost" to r.cost, "date" to date))
+        b.update(members(code).document(memberId), "spent", FieldValue.increment(r.cost.toDouble()))
+        b.commit().await()
+    }
+
+    /** ولي الأمر سلّم المكافأة، أو رفضها ورجّع النقاط. */
+    suspend fun closeRedeem(code: String, r: Redeem, refund: Boolean) {
+        val b = db.batch()
+        b.delete(house(code).collection("redeems").document(r.id))
+        if (refund) b.update(members(code).document(r.memberId), "spent", FieldValue.increment(-r.cost.toDouble()))
+        b.commit().await()
+    }
+
+    suspend fun setGoal(code: String, title: String, points: Double, base: Double) {
+        house(code).update(mapOf("goalTitle" to title, "goalPoints" to points, "goalBase" to base)).await()
+    }
+
+    // ---------- العذر وإلغاء العواقب ----------
+
+    /** ولي الأمر يقبل عذر مهمة: ما تنحسب فايتة، وبدون نقاط. */
+    suspend fun excuse(code: String, t: Task, date: String) {
+        done(code).document("${date}_${t.id}").set(
+            mapOf("taskId" to t.id, "memberId" to t.memberId, "date" to date, "points" to 0.0, "at" to -1, "ok" to true, "title" to t.title, "excused" to true),
+        ).await()
+    }
+
+    /** ولي الأمر يلغي عواقب اليوم لفرد: كل اللي فات قبل هاللحظة ما ينحسب. */
+    suspend fun pardon(code: String, memberId: String, date: String, nowMin: Int) {
+        members(code).document(memberId).update(mapOf("pardonDate" to date, "pardonMin" to nowMin)).await()
     }
 
     // ---------- قراءة حيّة ----------
@@ -132,6 +179,7 @@ class Repo {
                         s.getString("aiKey") ?: "", s.getString("aiModel") ?: "",
                         s.getBoolean("enforce") ?: false, s.getString("enforceDate") ?: "", (s.getLong("enforceMin") ?: 0L).toInt(),
                         (s.getLong("seedVersion") ?: 1L).toInt(), s.getString("uninstallHash") ?: "", s.getString("alias") ?: "", s.getDouble("prizeMax") ?: 15.0,
+                        s.getString("goalTitle") ?: "", s.getDouble("goalPoints") ?: 0.0, s.getDouble("goalBase") ?: 0.0,
                     ),
                 )
             }
@@ -148,6 +196,7 @@ class Repo {
             it.getBoolean("vpnOk") ?: false, it.getBoolean("overlayOk") ?: false, it.getBoolean("adminOk") ?: false, it.getBoolean("notifOk") ?: false,
             (it.getLong("streak") ?: 0L).toInt(), it.getString("streakDate") ?: "", it.getString("wish") ?: "",
             it.getString("joinDate") ?: "", (it.getLong("joinMin") ?: 0L).toInt(),
+            it.getDouble("spent") ?: 0.0, it.getString("pardonDate") ?: "", (it.getLong("pardonMin") ?: 0L).toInt(),
         )
     }
 
@@ -164,7 +213,7 @@ class Repo {
     fun doneFlow(code: String, since: String): Flow<List<Done>> =
         done(code).whereGreaterThanOrEqualTo("date", since).asFlow {
             Done(it.getString("taskId") ?: "", it.getString("memberId") ?: "", it.getString("date") ?: "", it.getDouble("points") ?: 0.0, (it.getLong("at") ?: -1L).toInt(), it.getBoolean("ok") ?: true,
-                it.getString("title") ?: "",
+                it.getString("title") ?: "", it.getBoolean("excused") ?: false,
             )
         }
 
@@ -172,13 +221,13 @@ class Repo {
     suspend fun allDone(code: String): List<Done> = done(code).get().await().documents.map {
         Done(
             it.getString("taskId") ?: "", it.getString("memberId") ?: "", it.getString("date") ?: "",
-            it.getDouble("points") ?: 0.0, (it.getLong("at") ?: -1L).toInt(), it.getBoolean("ok") ?: true, it.getString("title") ?: "",
+            it.getDouble("points") ?: 0.0, (it.getLong("at") ?: -1L).toInt(), it.getBoolean("ok") ?: true, it.getString("title") ?: "", it.getBoolean("excused") ?: false,
         )
     }
 
     /**
      * يحفظ قائمة مهام اليوم كما هي، عشان يبقى دليل على اللي كان مطلوب حتى لو تغيّر الجدول بعدين.
-     * overwrite: القائد يحدّثها لما يعدل مهام اليوم، والباقي يكتبونها بس إذا مو موجودة.
+     * overwrite: ولي الأمر يحدّثها لما يعدل مهام اليوم، والباقي يكتبونها بس إذا مو موجودة.
      */
     suspend fun snapshotDay(code: String, date: String, todays: List<Task>, overwrite: Boolean) {
         val ref = house(code).collection("days").document(date)
@@ -208,7 +257,7 @@ class Repo {
 
     // ---------- كتابة ----------
 
-    /** ok = false للمهمة المتأخرة: تنسجل بس نقاطها ما تنضاف لحد ما القائد يوافق. */
+    /** ok = false للمهمة المتأخرة: تنسجل بس نقاطها ما تنضاف لحد ما ولي الأمر يوافق. */
     suspend fun complete(code: String, t: Task, date: String, points: Double, at: Int, ok: Boolean) {
         val b = db.batch()
         b.set(
@@ -226,7 +275,7 @@ class Repo {
         b.commit().await()
     }
 
-    /** موافقة القائد على مهمة متأخرة: تنحسب نقاطها. */
+    /** موافقة ولي الأمر على مهمة متأخرة: تنحسب نقاطها. */
     suspend fun approve(code: String, d: Done) {
         val b = db.batch()
         b.update(done(code).document("${d.date}_${d.taskId}"), "ok", true)
@@ -234,7 +283,7 @@ class Repo {
         b.commit().await()
     }
 
-    /** رفض القائد: المهمة ترجع غير معمولة. */
+    /** رفض ولي الأمر: المهمة ترجع غير معمولة. */
     suspend fun reject(code: String, d: Done) {
         done(code).document("${d.date}_${d.taskId}").delete().await()
     }
@@ -360,7 +409,7 @@ class Repo {
         house(code).update("uninstallHash", hash).await()
     }
 
-    /** ينفذ تغييرات المساعد بعد موافقة القائد: إضافة، تعديل، وحذف، كلها مع بعض. */
+    /** ينفذ تغييرات المساعد بعد موافقة ولي الأمر: إضافة، تعديل، وحذف، كلها مع بعض. */
     suspend fun applyAi(code: String, adds: List<Task>, edits: List<Task>, deletes: List<String>) {
         val b = db.batch()
         for (t in adds) b.set(tasks(code).document(), taskMap(t))
@@ -396,7 +445,7 @@ class Repo {
         b.commit().await()
     }
 
-    /** موافقة القائد على نقاط مهمة شخصية. إذا صاحبها أشّر عليها اليوم وهي تنتظر، تنحسب له بالنقاط الموافق عليها. */
+    /** موافقة ولي الأمر على نقاط مهمة شخصية. إذا صاحبها أشّر عليها اليوم وهي تنتظر، تنحسب له بالنقاط الموافق عليها. */
     suspend fun approvePersonal(code: String, memberId: String, title: String, points: Int, pending: Done?) {
         val docs = personalDocs(code, memberId, title)
         val b = db.batch()
