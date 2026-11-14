@@ -46,10 +46,41 @@ data class House(
     val uninstallHash: String,
     /** كود دخول يختاره القائد بدل الكود الأصلي. فاضي = ما في. */
     val alias: String,
+    /** أقصى قيمة لجائزة الشهر بالدينار. */
+    val prizeMax: Double,
 )
 
 fun secretHash(code: String, secret: String): String =
     java.security.MessageDigest.getInstance("SHA-256").digest("$code:secret:$secret".toByteArray()).joinToString("") { "%02x".format(it) }
+
+val MONTH_NAMES = listOf("يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر")
+
+/** نتيجة شخص بمسابقة الشهر. pct من 0 إلى 1. */
+data class MonthScore(val member: Member, val pct: Double, val points: Double, val prize: Double)
+
+object Prize {
+    /** أقل نسبة التزام عشان الأول يستحق جائزة. */
+    const val MIN_PCT = 0.70
+    /** النقاط اللي تعطي نص الجائزة الثاني كامل. */
+    const val POINTS_GOAL = 2000.0
+
+    /** نص الجائزة على نسبة الالتزام، والنص الثاني على النقاط: كل ما جمع أكثر، الجائزة أكبر، لحد السقف. */
+    fun value(max: Double, pct: Double, points: Double): Double =
+        if (pct < MIN_PCT) 0.0 else minOf(max, max / 2 * pct + max / 2 * minOf(1.0, points / POINTS_GOAL))
+
+    /** ترتيب الشهر بالنسبة. from و to (بدون to) حدود الشهر، و upTo آخر يوم ينحسب. */
+    fun scores(
+        members: List<Member>, tasks: List<Task>, done: List<Done>, from: LocalDate, upTo: LocalDate,
+        nowMin: Int, grace: Int, max: Double, finished: Boolean,
+    ): List<MonthScore> = members.map { m ->
+        val (got, could) = Rules.commitment(m, tasks, done, from, upTo, if (finished) 24 * 60 else nowMin, grace)
+        val pts = done.filter { it.ok && it.memberId == m.id && it.date >= from.toString() && it.date <= upTo.toString() }.sumOf { it.points }
+        val pct = if (could > 0) got / could else 0.0
+        MonthScore(m, pct, pts, value(max, pct, pts))
+    }.sortedWith(compareByDescending<MonthScore> { it.pct }.thenByDescending { it.points })
+
+    fun kd(x: Double) = String.format(java.util.Locale.US, "%.1f", x).removeSuffix(".0")
+}
 
 val DAY_NAMES = listOf("الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت")
 val AGE_KEYS = listOf("u10", "u16", "adult")
@@ -83,6 +114,31 @@ object Rules {
 
     fun level(total: Double): Int = (total / LEVEL_SIZE).toInt() + 1
     fun levelProgress(total: Double): Float = ((total % LEVEL_SIZE) / LEVEL_SIZE).toFloat()
+
+    /**
+     * التزام العضو بمهام البيت بين تاريخين: (النقاط اللي أخذها، النقاط اللي كانت ممكنة).
+     * تنحسب بس المهام اللي عدّى موعدها أو انعملت، ومن بعد أول دخول له. المهام الشخصية والمكافآت خارج الحساب.
+     */
+    fun commitment(m: Member, tasks: List<Task>, done: List<Done>, from: LocalDate, to: LocalDate, nowMin: Int, grace: Int): Pair<Double, Double> {
+        val byKey = done.associateBy { it.date + "_" + it.taskId }
+        var earned = 0.0
+        var possible = 0.0
+        var d = from
+        while (!d.isAfter(to)) {
+            val date = d.toString()
+            for (t in tasks) {
+                if (t.memberId != m.id || t.personal || t.day != dayIndex(d)) continue
+                val limit = t.start + t.dur + grace
+                val dn = byKey[date + "_" + t.id]
+                val due = d.isBefore(to) || nowMin > limit
+                if (dn == null && !(due && m.accountable(date, limit))) continue
+                possible += t.points
+                if (dn != null && dn.ok) earned += minOf(dn.points, t.points.toDouble())
+            }
+            d = d.plusDays(1)
+        }
+        return earned to possible
+    }
 
     /** عرض النقاط: بدون كسور إلا إذا فيها نص نقطة. */
     fun pts(x: Double): String = if (x % 1.0 == 0.0) x.toLong().toString() else String.format(java.util.Locale.US, "%.1f", x)

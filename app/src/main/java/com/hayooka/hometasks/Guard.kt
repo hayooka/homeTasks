@@ -190,6 +190,7 @@ class EnforcerService : Service() {
             Penalty.forMember(h, m, t, d, date, now.hour * 60 + now.minute)
         } else PenaltyState.NONE
         if (h != null && m != null && t != null && d != null) remind(h, m, t, d, date, now.hour * 60 + now.minute)
+        monthNotice(date, now.hour)
 
         if (st.block && Guard.vpnReady(this)) BlockVpnService.start(this) else if (BlockVpnService.running) BlockVpnService.stop(this)
 
@@ -229,6 +230,26 @@ class EnforcerService : Service() {
                 .build()
             (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(task.id.hashCode(), n)
         }
+    }
+
+    /** إشعار يوم قبل نهاية الشهر، وإشعار أول يوم بالشهر الجديد. مرة وحدة لكل واحد منهم. */
+    private fun monthNotice(date: LocalDate, hour: Int) {
+        if (hour < 10) return
+        val left = date.lengthOfMonth() - date.dayOfMonth
+        val name = MONTH_NAMES[date.monthValue - 1]
+        val text = when {
+            left == 1 -> "باقي يومين على نهاية مسابقة $name. شد حيلك!"
+            date.dayOfMonth == 1 -> "انتهت مسابقة الشهر اللي فات وبدأت مسابقة $name. شوف مين فاز في الترتيب."
+            else -> return
+        }
+        val prefs = getSharedPreferences("session", Context.MODE_PRIVATE)
+        if (prefs.getString("monthNotice", "") == date.toString()) return
+        prefs.edit().putString("monthNotice", date.toString()).apply()
+        val open = android.app.PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), android.app.PendingIntent.FLAG_IMMUTABLE)
+        val n = Notification.Builder(this, "remind")
+            .setContentTitle("مسابقة الشهر").setContentText(text)
+            .setSmallIcon(android.R.drawable.star_on).setContentIntent(open).setAutoCancel(true).build()
+        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(7777, n)
     }
 
     override fun onDestroy() {

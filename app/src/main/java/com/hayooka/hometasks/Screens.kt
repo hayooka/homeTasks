@@ -180,8 +180,8 @@ fun TodayPage(
         }
         Text(
             if (past) "${DAY_NAMES[Rules.dayIndex(viewDay)]} $viewDay · ${Rules.pts(earned)} من $possible نقطة"
-            else if (allDone) "${DAY_NAMES[Rules.dayIndex(today)]} · خلصت كل مهامك! ${Rules.pts(earned)} نقطة"
-            else "${DAY_NAMES[Rules.dayIndex(today)]} · نقاط اليوم ${Rules.pts(earned)} من $possible",
+            else if (allDone) "${DAY_NAMES[Rules.dayIndex(today)]} ${today.dayOfMonth} ${MONTH_NAMES[today.monthValue - 1]} · خلصت كل مهامك! ${Rules.pts(earned)} نقطة"
+            else "${DAY_NAMES[Rules.dayIndex(today)]} ${today.dayOfMonth} ${MONTH_NAMES[today.monthValue - 1]} · نقاط اليوم ${Rules.pts(earned)} من $possible",
             fontSize = 18.sp, fontWeight = FontWeight.Bold,
         )
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -193,6 +193,19 @@ fun TodayPage(
             }
         }
         if (past) Text("هذا عرض ليوم سابق، للمتابعة بس.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+        // تنبيه نهاية الشهر وبداية الشهر الجديد
+        val monthEnd = today.withDayOfMonth(today.lengthOfMonth())
+        val left = monthEnd.dayOfMonth - today.dayOfMonth
+        if (!past && (left <= 3 || today.dayOfMonth <= 3)) {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+                Text(
+                    if (left <= 3) (if (left == 0) "آخر يوم بمسابقة ${MONTH_NAMES[today.monthValue - 1]}! تنتهي الليلة." else "باقي $left أيام على نهاية مسابقة ${MONTH_NAMES[today.monthValue - 1]}.")
+                    else "بدأت مسابقة ${MONTH_NAMES[today.monthValue - 1]}! شوف نتيجة الشهر اللي فات في الترتيب ← مسابقة الشهر.",
+                    Modifier.padding(12.dp), fontWeight = FontWeight.Bold,
+                )
+            }
+        }
 
         if (!past && house.enforce && Penalty.enforcedOnPhone(me)) GuardSetupCard()
         if (!past && st.missed > 0) {
@@ -300,39 +313,74 @@ fun RankPage(
 ) {
     val scope = rememberCoroutineScope()
     var period by remember { mutableStateOf("week") }
-    val from = if (period == "week") weekStart else monthStart
-    val sums = done.filter { it.ok && it.date >= from }.groupBy { it.memberId }.mapValues { e -> e.value.sumOf { it.points } }
-    val ranked = members.sortedByDescending { sums[it.id] ?: 0.0 }
+    val month = LocalDate.parse(monthStart)
+    val monthEnd = month.plusMonths(1).minusDays(1)
+    val daysLeft = java.time.temporal.ChronoUnit.DAYS.between(today, monthEnd).toInt()
+    val weekSums = done.filter { it.ok && it.date >= weekStart }.groupBy { it.memberId }.mapValues { e -> e.value.sumOf { it.points } }
+    val scores = Prize.scores(members, tasks, done, month, today, nowMin, house.grace, house.prizeMax, false)
+    val leaderTop = scores.firstOrNull()?.member?.leader == true
     val penalties = members.map { it to Penalty.forMember(house, it, tasks, done, today, nowMin) }.filter { it.second.missed > 0 }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("الترتيب", fontSize = 22.sp, fontWeight = FontWeight.Black)
-        Chips(listOf("week" to "هذا الأسبوع", "month" to "هذا الشهر"), period) { period = it }
-        ranked.forEachIndexed { i, m ->
-            val pts = sums[m.id] ?: 0.0
-            val streak = Rules.streakNow(m, today)
-            val first = i == 0 && pts > 0
-            Card(
-                Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = if (first) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface),
-            ) {
-                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("${i + 1}", fontSize = 22.sp, fontWeight = FontWeight.Black, modifier = Modifier.width(26.dp), textAlign = TextAlign.Center, color = if (first) GGold else MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (m.character >= 0) CharacterView(m.character, Rules.level(m.total), Modifier.size(56.dp)) else Spacer(Modifier.size(56.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(m.name + if (m.id == meId) " (أنت)" else "", fontWeight = FontWeight.Bold)
-                        Text("المستوى ${Rules.level(m.total)}" + if (streak > 0) " · سلسلة $streak أيام" else "", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        // أمنية كل واحد تبان في ترتيب الشهر
-                        if (period == "month" && m.wish.isNotBlank()) Text("أمنيته: ${m.wish}", fontSize = 12.sp, color = GGold)
+        Chips(listOf("week" to "هذا الأسبوع", "month" to "مسابقة الشهر"), period) { period = it }
+
+        if (period == "week") {
+            val weekEnd = LocalDate.parse(weekStart).plusDays(6)
+            Text("من ${LocalDate.parse(weekStart).dayOfMonth} إلى ${weekEnd.dayOfMonth} ${MONTH_NAMES[weekEnd.monthValue - 1]}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            members.sortedByDescending { weekSums[it.id] ?: 0.0 }.forEachIndexed { i, m ->
+                val pts = weekSums[m.id] ?: 0.0
+                RankRow(i, m, meId, today, pts > 0 && i == 0, Rules.pts(pts), null)
+            }
+            Text("ترتيب الأسبوع بالنقاط، ويبدأ من جديد كل يوم أحد. المستوى يضل معك.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            // عنوان المسابقة والتاريخ
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("مسابقة ${MONTH_NAMES[month.monthValue - 1]} ${month.year}", fontSize = 20.sp, fontWeight = FontWeight.Black)
+                    Text(
+                        if (daysLeft == 0) "آخر يوم! تنتهي الليلة الساعة 12" else "باقي $daysLeft يوم · تنتهي ${monthEnd.dayOfMonth} ${MONTH_NAMES[monthEnd.monthValue - 1]} الساعة 12 بالليل",
+                        fontWeight = FontWeight.Bold, color = GGold,
+                    )
+                    Text(
+                        "الفائز صاحب أعلى نسبة التزام بمهام البيت. الجائزة لحد ${Prize.kd(house.prizeMax)} د.ك: نصها على النسبة ونصها على النقاط، يعني كل ما جمعت نقاط أكثر زادت. " +
+                            "تحت ${(Prize.MIN_PCT * 100).toInt()}% ما في جائزة. وإذا القائد طلع الأول، ما حد يفوز هالشهر.",
+                        fontSize = 12.sp,
+                    )
+                }
+            }
+            scores.forEachIndexed { i, sc ->
+                val first = i == 0 && sc.pct > 0
+                RankRow(
+                    i, sc.member, meId, today, first, "${(sc.pct * 100).toInt()}%",
+                    buildString {
+                        append("${Rules.pts(sc.points)} نقطة")
+                        if (!sc.member.leader) append(if (sc.prize > 0) " · جائزته لو فاز: ${Prize.kd(sc.prize)} د.ك" else " · تحت ${(Prize.MIN_PCT * 100).toInt()}%، بدون جائزة")
+                        if (sc.member.wish.isNotBlank()) append("\nأمنيته: ${sc.member.wish}")
+                    },
+                )
+            }
+            if (leaderTop) Text("القائد بالمركز الأول حالياً، فما في جائزة لأحد لو ضل هيك!", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = GHot)
+
+            // نتيجة الشهر اللي فات
+            val prev = month.minusMonths(1)
+            val prevScores = Prize.scores(members, tasks, done, prev, month.minusDays(1), 0, house.grace, house.prizeMax, true).filter { it.pct > 0 }
+            if (prevScores.isNotEmpty()) {
+                val w = prevScores.first()
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text("نتيجة ${MONTH_NAMES[prev.monthValue - 1]}", fontWeight = FontWeight.Bold)
+                        Text(
+                            when {
+                                w.member.leader -> "القائد طلع الأول بـ ${(w.pct * 100).toInt()}%، فما حد فاز."
+                                w.prize <= 0 -> "${w.member.name} طلع الأول بـ ${(w.pct * 100).toInt()}%، بس تحت الحد، فما في جائزة."
+                                else -> "${w.member.name} فاز بـ ${(w.pct * 100).toInt()}% وجائزته ${Prize.kd(w.prize)} د.ك"
+                            },
+                            color = GGold,
+                        )
                     }
-                    Pill(Rules.pts(pts), if (first) GGold else GNeon)
                 }
             }
         }
-        Text(
-            if (period == "week") "ترتيب الأسبوع يبدأ من جديد كل يوم أحد. المستوى يضل معك."
-            else "الأول بنهاية الشهر تتحقق أمنيته. الترتيب يبدأ من جديد أول كل شهر.",
-            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
 
         // صندوق الأمنية
         val mine = members.firstOrNull { it.id == meId }
@@ -342,6 +390,14 @@ fun RankPage(
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("أمنيتي إذا طلعت الأول هذا الشهر", fontWeight = FontWeight.Bold, color = GGold)
+                    val mineScore = scores.firstOrNull { it.member.id == meId }
+                    if (mineScore != null && !mine.leader) {
+                        Text(
+                            if (mineScore.prize > 0) "لو فزت الآن، جائزتك ${Prize.kd(mineScore.prize)} د.ك. اكتب أمنية على قدها."
+                            else "ارفع التزامك فوق ${(Prize.MIN_PCT * 100).toInt()}% عشان يصير لك جائزة.",
+                            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     OutlinedTextField(wish, { wish = it.take(80) }, placeholder = { Text("اكتب اللي تبغاه…") }, modifier = Modifier.fillMaxWidth(), maxLines = 2)
                     Button(
                         enabled = wish.trim() != mine.wish,
@@ -681,6 +737,13 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                 )
 
                 HorizontalDivider()
+                Stepper(
+                    "أقصى جائزة للشهر", "${Prize.kd(house.prizeMax)} د.ك",
+                    { act { repo.setPrizeMax(code, (house.prizeMax - 1).coerceAtLeast(1.0)) } },
+                    { act { repo.setPrizeMax(code, (house.prizeMax + 1).coerceAtMost(200.0)) } },
+                )
+
+                HorizontalDivider()
                 // تنزيل السجل كامل: يُجهّز النص ثم يُفتح اختيار مكان الحفظ
                 var exportText by remember { mutableStateOf("") }
                 fun write(uri: android.net.Uri?) {
@@ -841,6 +904,27 @@ fun GuardSetupCard() {
             if (android.os.Build.VERSION.SDK_INT >= 33) {
                 OutlinedButton(onClick = { notifLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) }) { Text("السماح بإشعارات التذكير") }
             }
+        }
+    }
+}
+
+/** صف بالترتيب: الرقم، الشخصية، الاسم، القيمة، وسطر إضافي اختياري. */
+@Composable
+private fun RankRow(i: Int, m: Member, meId: String, today: LocalDate, first: Boolean, value: String, extra: String?) {
+    val streak = Rules.streakNow(m, today)
+    Card(
+        Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = if (first) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface),
+    ) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("${i + 1}", fontSize = 22.sp, fontWeight = FontWeight.Black, modifier = Modifier.width(26.dp), textAlign = TextAlign.Center, color = if (first) GGold else MaterialTheme.colorScheme.onSurfaceVariant)
+            if (m.character >= 0) CharacterView(m.character, Rules.level(m.total), Modifier.size(56.dp)) else Spacer(Modifier.size(56.dp))
+            Column(Modifier.weight(1f)) {
+                Text(m.name + (if (m.id == meId) " (أنت)" else "") + (if (m.leader) " · القائد" else ""), fontWeight = FontWeight.Bold)
+                Text("المستوى ${Rules.level(m.total)}" + if (streak > 0) " · سلسلة $streak أيام" else "", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (extra != null) Text(extra, fontSize = 12.sp, color = GGold)
+            }
+            Pill(value, if (first) GGold else GNeon)
         }
     }
 }
