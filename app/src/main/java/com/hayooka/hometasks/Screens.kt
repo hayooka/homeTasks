@@ -5,6 +5,7 @@ package com.hayooka.hometasks
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -576,10 +577,7 @@ fun ManagePage(repo: Repo, code: String, house: House, members: List<Member>, ta
                             LinearProgressIndicator(progress = { if (mine.isEmpty()) 0f else okCount / mine.size.toFloat() }, modifier = Modifier.fillMaxWidth())
                             val st = Penalty.forMember(house, m, tasks, done, today, nowMin)
                             if (st.missed > 0) Text("فاتته ${st.missed} · ${Penalty.describe(st, m)}", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
-                            val stale = System.currentTimeMillis() - m.guardAt > 20 * 60_000
-                            if (house.enforce && Penalty.enforcedOnPhone(m) && (stale || !m.guardOk)) {
-                                Text("الحماية مو كاملة على جواله: إذن ناقص أو حماية الحذف متوقفة", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
-                            }
+                            if (!m.leader) PermissionStatus(m, Penalty.enforcedOnPhone(m))
                             val streak = Rules.streakNow(m, today)
                             if (streak > 0) Text("سلسلة $streak أيام", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
 
@@ -958,4 +956,33 @@ private fun RankRow(i: Int, m: Member, meId: String, today: LocalDate, first: Bo
             Pill(value, if (first) GGold else GNeon)
         }
     }
+}
+
+/** حالة أذونات جوال العضو، يشوفها القائد في الإدارة ← اليوم. */
+@Composable
+private fun PermissionStatus(m: Member, full: Boolean) {
+    if (m.guardAt == 0L) {
+        Text("جواله لسا ما اتصل بالتطبيق", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+        return
+    }
+    val items = buildList {
+        if (full) {
+            add("الإنترنت" to m.vpnOk)
+            add("شاشة القفل" to m.overlayOk)
+            add("حماية الحذف" to m.adminOk)
+        }
+        add("الإشعارات" to m.notifOk)
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+        for ((name, ok) in items) Pill((if (ok) "✓ " else "✗ ") + name, if (ok) GNeon else GHot)
+    }
+    val mins = ((System.currentTimeMillis() - m.guardAt) / 60_000).toInt()
+    Text(
+        when {
+            mins < 1 -> "آخر اتصال: الآن"
+            mins < 60 -> "آخر اتصال قبل $mins دقيقة"
+            else -> "آخر اتصال قبل ${mins / 60} ساعة · ممكن الجوال مطفي أو التطبيق موقوف"
+        },
+        fontSize = 11.sp, color = if (mins >= 20) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }

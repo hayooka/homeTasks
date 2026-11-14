@@ -8,6 +8,8 @@ data class Member(
     val id: String, val name: String, val age: String, val character: Int,
     val pinHash: String, val leader: Boolean, val total: Double,
     val guardAt: Long = 0, val guardOk: Boolean = false,
+    /** حالة كل إذن على جواله، كما بلّغت عنها خدمة التطبيق. */
+    val vpnOk: Boolean = false, val overlayOk: Boolean = false, val adminOk: Boolean = false, val notifOk: Boolean = false,
     val streak: Int = 0, val streakDate: String = "",
     /** اللي يتمناه إذا طلع الأول بالشهر. */
     val wish: String = "",

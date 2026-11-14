@@ -124,6 +124,7 @@ class EnforcerService : Service() {
     private var doneJob: Job? = null
     private var doneDate = ""
     private var lastBeat = 0L
+    private var lastPerms: List<Boolean>? = null
     private var snapDate = ""
     /** المهام اللي انرسل تذكيرها اليوم، عشان ما يتكرر. */
     private val reminded = HashSet<String>()
@@ -217,10 +218,15 @@ class EnforcerService : Service() {
         }
 
         val ms = System.currentTimeMillis()
-        if (m != null && ms - lastBeat > 5 * 60_000) {
+        // نبلّغ القائد فوراً لما يتغير أي إذن، وكل 5 دقايق عشان يعرف إن الجوال متصل
+        val perms = listOf(
+            Guard.vpnReady(this), Guard.overlayReady(this), Guard.adminReady(this),
+            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).areNotificationsEnabled(),
+        )
+        if (m != null && (perms != lastPerms || ms - lastBeat > 5 * 60_000)) {
             lastBeat = ms
-            val ok = Guard.vpnReady(this) && Guard.overlayReady(this) && Guard.adminReady(this)
-            scope.launch { try { repo.beat(code, meId, ok) } catch (e: Exception) { } }
+            lastPerms = perms
+            scope.launch { try { repo.beat(code, meId, perms[0], perms[1], perms[2], perms[3]) } catch (e: Exception) { lastPerms = null } }
         }
     }
 
@@ -330,6 +336,6 @@ class AdminReceiver : android.app.admin.DeviceAdminReceiver() {
         val prefs = context.getSharedPreferences("session", Context.MODE_PRIVATE)
         val code = prefs.getString("code", null) ?: return
         val me = prefs.getString("me", null) ?: return
-        CoroutineScope(Dispatchers.IO).launch { try { Repo().beat(code, me, false) } catch (e: Exception) { } }
+        CoroutineScope(Dispatchers.IO).launch { try { Repo().adminOff(code, me) } catch (e: Exception) { } }
     }
 }

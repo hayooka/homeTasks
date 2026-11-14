@@ -145,6 +145,7 @@ class Repo {
             (it.getLong("character") ?: -1L).toInt(), it.getString("pinHash") ?: "",
             it.getBoolean("leader") ?: false, it.getDouble("total") ?: 0.0,
             it.getLong("guardAt") ?: 0L, it.getBoolean("guardOk") ?: false,
+            it.getBoolean("vpnOk") ?: false, it.getBoolean("overlayOk") ?: false, it.getBoolean("adminOk") ?: false, it.getBoolean("notifOk") ?: false,
             (it.getLong("streak") ?: 0L).toInt(), it.getString("streakDate") ?: "", it.getString("wish") ?: "",
             it.getString("joinDate") ?: "", (it.getLong("joinMin") ?: 0L).toInt(),
         )
@@ -311,8 +312,19 @@ class Repo {
     }
 
     /** نبضة من خدمة الحراسة على جوال العضو: آخر وقت كانت شغالة وهل صلاحياتها كاملة. */
-    suspend fun beat(code: String, memberId: String, ok: Boolean) {
-        members(code).document(memberId).update(mapOf("guardAt" to System.currentTimeMillis(), "guardOk" to ok)).await()
+    /** نبضة من جوال العضو: وقت آخر اتصال، وحالة كل إذن. */
+    suspend fun beat(code: String, memberId: String, vpn: Boolean, overlay: Boolean, admin: Boolean, notif: Boolean) {
+        members(code).document(memberId).update(
+            mapOf(
+                "guardAt" to System.currentTimeMillis(), "guardOk" to (vpn && overlay && admin),
+                "vpnOk" to vpn, "overlayOk" to overlay, "adminOk" to admin, "notifOk" to notif,
+            ),
+        ).await()
+    }
+
+    /** لما يوقف حماية الحذف من إعدادات الجوال. */
+    suspend fun adminOff(code: String, memberId: String) {
+        members(code).document(memberId).update(mapOf("guardAt" to System.currentTimeMillis(), "guardOk" to false, "adminOk" to false)).await()
     }
 
     /** يسجل لحظة أول دخول للعضو، ومنها يبدأ حسابه. */
